@@ -1,0 +1,114 @@
+#ifndef SKY_COMMON_GLSL
+#define SKY_COMMON_GLSL
+
+#include "common.glsl"
+#include "lighting/tonemapping.glsl"
+
+// Table 1: Coefficients of the different participating media compo-nents constituting the Earth’s atmosphere
+// These are per megameter.
+const vec3  rayleighScatteringBase  = vec3(0.175, 0.409, 1.0) / 1e6;
+const float rayleighAbsorptionBase  = 0.0;
+const float rayleighScatteringScale = 33.1f;
+const float g                       = 0.8;          // light concentration .76 //.45 //.6  .45 is normaL
+
+const float mieScatteringBase      = 3.996 / 1e6;
+const float mieAbsorptionBase      = 4.40  / 1e6;
+
+// NOTE: Ozone does not contribute to scattering; it only absorbs light.
+const vec3  ozoneAbsorptionBase    = vec3(0.650, 1.881, .085) / 1e6;
+
+const float dFogMin = 0;
+const float dFogMax = 0.9999;
+
+// Mobile (LQ) fog volume range. The volume used to end at the depth-buffer
+// value dFogMax, a view depth set by the near plane: about 166 m with the 2 cm
+// VR near plane (500 m with the 10 cm desktop one). Terrain beyond it received
+// no more haze until the far plane cut it off. The LQ volume (fog_view_lut.comp
+// without SEPARABLE, fog.frag without VOLUMETRIC, sky.frag without SEPARABLE)
+// now spans view depths up to fogVolumeFarScale*zFar. Sky pixels keep sampling
+// the old end, which sky.frag subtracts, so the sky and the clouds are unchanged.
+const float fogVolumeFarScale = 0.95;
+
+float fogVolumeFar(vec3 clipInfo) {
+  return clipInfo.z*fogVolumeFarScale; // view depth, cm
+  }
+
+// Normalised LQ volume coordinate of a view depth (cm). Slices are spaced
+// quadratically in view depth (fog_view_lut.comp integrates the same spacing):
+// the first slice covers about 1 m, the last about 60 m, so near fog is resolved
+// more finely than by the old uniform 5 m slices while the volume still reaches
+// the far plane with the same 32 steps.
+float fogVolumeSlice(float linear, vec3 clipInfo) {
+  const float n = linearDepth(dFogMin, clipInfo);
+  return sqrt(clamp((linear-n)/(fogVolumeFar(clipInfo)-n), 0.0, 1.0));
+  }
+
+// Depth-buffer value of a view depth (cm); inverse of linearDepth().
+float depthAtLinear(float linear, vec3 clipInfo) {
+  return (clipInfo[0]/linear - clipInfo[2])/clipInfo[1];
+  }
+
+float miePhase(float cosTheta) {
+  const float scale = 3.0/(8.0*M_PI);
+
+  float num   = (1.0-g*g)*(1.0+cosTheta*cosTheta);
+  float denom = (2.0+g*g)*pow((1.0 + g*g - 2.0*g*cosTheta), 1.5);
+
+  return scale*num/denom;
+  }
+
+float rayleighPhase(float cosTheta) {
+  const float k = 3.0/(16.0*M_PI);
+  return k*(1.0+cosTheta*cosTheta);
+  }
+
+struct ScatteringValues {
+  vec3  rayleighScattering;
+  float mieScattering;
+  vec3  extinction;
+  };
+// 4. Atmospheric model
+ScatteringValues scatteringValues(float altitudeKM, float clouds) {
+  // Note: Paper gets these switched up. See SkyAtmosphereCommon.cpp:SetupEarthAtmosphere in demo app
+  float rayleighDensity    = exp(-altitudeKM/8.0);
+  float mieDensity         = exp(-altitudeKM/1.2);
+  float ozoneDistribution  = max(0.0, 1.0 - abs(altitudeKM-25.0)/15.0);
+
+  ScatteringValues ret;
+  ret.rayleighScattering   = rayleighScatteringBase*rayleighDensity*rayleighScatteringScale;
+  float rayleighAbsorption = rayleighAbsorptionBase*rayleighDensity;
+
+  ret.mieScattering        = mieScatteringBase*mieDensity;
+  float mieAbsorption      = mieAbsorptionBase*mieDensity;
+
+  vec3  ozoneAbsorption    = ozoneAbsorptionBase*ozoneDistribution;
+
+  // Clouds Ah-Hook
+  clouds = max(0, clouds-0.2); // 0.33 in LH
+  ret.mieScattering      *= exp( clouds*5.0); // (1.0+clouds*4.0);
+  ret.rayleighScattering *= exp(-clouds*5.0); // (1.0-clouds*0.5);
+
+  ret.extinction = ret.rayleighScattering + rayleighAbsorption +
+                   ret.mieScattering + mieAbsorption +
+                   ozoneAbsorption;
+  return ret;
+  }
+
+ScatteringValues scatteringValues(vec3 pos, float clouds) {
+  float altitudeKM = (length(pos)-RPlanet) / 1000.0;
+  return scatteringValues(altitudeKM, clouds);
+  }
+
+// 5.5.2. LUT parameterization
+vec3 textureLUT(sampler2D tex, vec3 pos, vec3 sunDir) {
+  float height   = length(pos);
+  vec3  up       = pos / height;
+  float cosAngle = dot(sunDir, up);
+
+  vec2 uv;
+  uv.x = 0.5 + 0.5*cosAngle;
+  uv.y = (height - RPlanet)/(RAtmos - RPlanet);
+  return textureLod(tex, uv, 0).rgb;
+  }
+
+#endif

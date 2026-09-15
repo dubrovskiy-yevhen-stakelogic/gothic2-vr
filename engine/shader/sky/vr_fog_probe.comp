@@ -1,0 +1,47 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define DEPTH_LIMIT
+#define FOG_VOLUME_FAR // diagnoses the mobile (LQ) volume
+#include "sky_common.glsl"
+#include "scene.glsl"
+
+layout(binding = 0, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+layout(binding = 6) uniform sampler2D currentHiZ;
+layout(binding = 7, std430) buffer ProbeHistogram {
+  // [0,32]: column step count; [33,65]: workgroup maximum step count.
+  uint histogram[66];
+  };
+layout(push_constant, std430) uniform Push {
+  ivec3 volumeSize;
+  } push;
+
+#include "fog_depth.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+shared uint groupMaxSteps;
+
+void main() {
+  if(gl_LocalInvocationIndex==0u)
+    groupMaxSteps = 0u;
+  barrier();
+
+  const ivec2 column = ivec2(gl_GlobalInvocationID.xy);
+  // This diagnostic has exact buckets for volumes with at most 32 layers.
+  // Inactive edge invocations still participate in both shared-memory barriers.
+  const bool valid = all(lessThan(column, push.volumeSize.xy)) &&
+                     push.volumeSize.z>0 && push.volumeSize.z<=32;
+  uint steps = 0u;
+  if(valid) {
+    steps = uint(visibleStepCount(column, push.volumeSize));
+    atomicAdd(histogram[steps], 1u);
+    }
+  atomicMax(groupMaxSteps, steps);
+  barrier();
+
+  if(gl_LocalInvocationIndex==0u && groupMaxSteps>0u)
+    atomicAdd(histogram[33u+groupMaxSteps], 1u);
+  }

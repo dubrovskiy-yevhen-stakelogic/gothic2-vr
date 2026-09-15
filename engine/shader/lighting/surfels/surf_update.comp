@@ -1,0 +1,40 @@
+#version 460
+
+#include "lighting/surfels/surf_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(binding = 0, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+layout(binding = 1) uniform texture2D depth;
+layout(binding = 2, std430) buffer SB0 { SurfHeader header; Surfel surfels[]; };
+
+float pixelToWorld(float pixelRadius, float z) {
+  return pixelToWorld(scene, pixelRadius, z);
+  }
+
+void main() {
+  const uint surfelId = gl_GlobalInvocationID.x;
+  if(surfelId >= header.count)
+    return;
+
+  const Surfel s = surfels[surfelId];
+
+  if(!isSurfelAlive(s))
+    return; // disabled
+
+  const vec4   pos4       = scene.viewProject * vec4(s.pos, 1.0);
+  const vec2   posNdc     = ((pos4.xy/pos4.w)*0.5+0.5);
+  const ivec2  fragCoord  = ivec2(posNdc*scene.screenRes + 0.5);
+
+  const float  rMin       = pixelToWorld(MinCoverage,     pos4.z/pos4.w);
+  const float  rMax       = pixelToWorld(DefaultCoverage, pos4.z/pos4.w);
+  const float  radiusMean = max(rMin, min(s.radiusMean, rMax * rEffScale));
+
+  surfels[surfelId].fragCoord  = fragCoord;
+  surfels[surfelId].radius     = rMax;
+  surfels[surfelId].radiusMean = radiusMean;
+  }

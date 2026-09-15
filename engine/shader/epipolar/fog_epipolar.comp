@@ -1,0 +1,134 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#include "epipolar/epipolar_common.glsl"
+#include "sky/sky_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+const uint NumThreads = gl_WorkGroupSize.x*gl_WorkGroupSize.y*gl_WorkGroupSize.z;
+
+layout(binding = 1, r16)    uniform readonly image2D rayData;
+layout(binding = 2, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+layout(binding = 3, std430) buffer Ep0 { Epipole epipole[]; };
+layout(binding = 4)         uniform texture2D  depth;
+
+uint  NumSamples   = imageSize(rayData).x;
+uint  NumSlices    = imageSize(rayData).y;
+ivec2 fragCoord    = ivec2(gl_GlobalInvocationID.xy);
+ivec2 viewportSize = textureSize(depth, 0);
+
+shared vec2 rayOrig, rayDir;
+shared uint tMinUint, tMaxUint;
+shared uint dBeginUint, dEndUint;
+shared uint tDbg;
+
+vec3 screenToShadow(vec3 scr) {
+  const vec4 shPos = scene.viewProject2VirtualShadow * vec4(scr,1);
+  return shPos.xyz/shPos.w;
+  }
+
+vec3 wrldToShadow(vec3 pos) {
+  const vec4  shPos = scene.viewVirtualShadow*vec4(pos,1);
+  return shPos.xyz/shPos.w;
+  }
+
+void minMaxRayT(const vec2 rposIn) {
+  const vec2  rpos = rposIn - rayOrig;
+  const float t    = dot(rpos, rayDir);
+  if(t<0) {
+    // atomicAdd(tDbg, 1);
+    return; // error
+    }
+
+  atomicMax(tMaxUint, floatBitsToUint(t));
+  atomicMin(tMinUint, floatBitsToUint(t));
+  }
+
+void trace(const vec2 src, const vec2 dst) {
+  const uint lane  = gl_LocalInvocationIndex;
+  const vec2 vec   = dst - src;
+  const vec2 avec  = abs(vec*viewportSize);
+  const int  steps = int(max(avec.x, avec.y));
+
+  if(lane==0) {
+    tMinUint = 0xFFFFFFFF;
+    tMaxUint = floatBitsToUint(0);
+
+    const vec2 inPos  = src*2.0-1.0;
+    const vec3 camPos = wrldToShadow(scene.camPos);
+    const vec2 shPos1 = screenToShadow(vec3(inPos, dFogMax)).xy;
+
+    rayOrig = camPos.xy;
+    rayDir  = normalize(shPos1 - rayOrig);
+    }
+  barrier();
+
+  for(uint i=lane; i<steps; i+=NumThreads) {
+    const float a   = (i+0.5)/float(steps);
+    const vec2  pix = mix(src, dst, a);
+    const float z   = min(texelFetch(depth, ivec2(pix*viewportSize), 0).x, dFogMax);
+
+    const vec2  inPos  = pix*2.0-1.0;
+    const vec3  shPos0 = screenToShadow(vec3(inPos, 0));
+    const vec3  shPos1 = screenToShadow(vec3(inPos, z));
+
+    minMaxRayT(shPos0.xy);
+    minMaxRayT(shPos1.xy);
+
+    atomicMin(dBeginUint, floatBitsToUint(shPos0.z));
+    atomicMin(dEndUint,   floatBitsToUint(shPos1.z));
+    }
+  barrier();
+
+  const float tMin    = uintBitsToFloat(tMinUint);
+  const float tMax    = uintBitsToFloat(tMaxUint);
+  const float dBegin  = uintBitsToFloat(dBeginUint);
+  const float dEnd    = uintBitsToFloat(dEndUint);
+  const uint  sliceId = gl_WorkGroupID.x;
+
+  if(lane==0) {
+    epipole[sliceId].rayOrig = rayOrig;
+    epipole[sliceId].rayDir  = rayDir;
+    epipole[sliceId].tMin    = tMin;
+    epipole[sliceId].tMax    = tMax;
+    epipole[sliceId].dBegin  = dBegin;
+    epipole[sliceId].dEnd    = dEnd;
+    }
+  }
+
+void main() {
+  vec2 rpos = rayPosition2d(gl_WorkGroupID.x, viewportSize, NumSlices);
+  vec2 sun  = sunPosition2d(scene)*0.5+0.5;
+
+  if(sun.x<0) {
+    vec2  dvec = sun - rpos;
+    float k    = (0 - rpos.x)/dvec.x;
+    sun = rpos + dvec*k;
+    }
+  if(sun.x>1) {
+    vec2  dvec = sun - rpos;
+    float k    = (1 - rpos.x)/dvec.x;
+    sun = rpos + dvec*k;
+    }
+  if(sun.y<0) {
+    vec2  dvec = sun - rpos;
+    float k    = (0 - rpos.y)/dvec.y;
+    sun = rpos + dvec*k;
+    }
+  if(sun.y>1) {
+    vec2  dvec = sun - rpos;
+    float k    = (1 - rpos.y)/dvec.y;
+    sun = rpos + dvec*k;
+    }
+
+  trace(rpos, sun);
+  }

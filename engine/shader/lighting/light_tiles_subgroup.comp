@@ -1,0 +1,90 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#include "scene.glsl"
+
+// Preserve every exact world-space sample from light_tiles.comp,
+// replacing only the workgroup bounds reduction with subgroup operations.
+layout(local_size_x=8, local_size_y=8) in;
+layout(binding=0,std140) uniform UboScene { SceneDesc scene; };
+layout(binding=3) uniform sampler2D depth;
+layout(binding=4,std430) readonly buffer Lights { LightSource lights[]; };
+layout(binding=5,std430) readonly buffer Arguments { uint args[]; };
+layout(binding=6,std430) writeonly buffer Tiles { uint tiles[]; };
+layout(push_constant,std430) uniform Push { vec3 origin; } push;
+
+// At most 64 subgroups in a 64-invocation workgroup, independent of device size.
+shared vec3 lower[64];
+shared vec3 upper[64];
+shared uint invalidPosition;
+shared uint count;
+const uint TileCapacity=64u;
+const uint TileStride=TileCapacity+1u;
+
+void main() {
+  const uint lane=gl_LocalInvocationIndex;
+  if(args[1]==0u) {
+    if(lane==0u) {
+      const uint width=uint((textureSize(depth,0).x+15)/16);
+      tiles[(gl_WorkGroupID.y*width+gl_WorkGroupID.x)*TileStride]=0u;
+    }
+    return;
+  }
+  if(lane==0u) { invalidPosition=0u; count=0u; }
+  vec3 localLower=vec3(3.402823e38);
+  vec3 localUpper=vec3(-3.402823e38);
+  barrier();
+  const ivec2 size=textureSize(depth,0);
+  for(int y=0;y<2;++y) for(int x=0;x<2;++x) {
+    const ivec2 pixel=ivec2(gl_WorkGroupID.xy)*16+ivec2(gl_LocalInvocationID.xy)+ivec2(x,y)*8;
+    if(any(greaterThanEqual(pixel,size))) continue;
+    const float z=texelFetch(depth,pixel,0).x;
+    if(z==1.0) continue;
+    const vec2 scr=((vec2(pixel)+vec2(0.5))/vec2(size))*2.0-1.0;
+    const vec4 p=scene.viewProjectLwcInv*vec4(scr,z,1.0);
+    const vec3 world=p.xyz/p.w+push.origin;
+    if(any(isnan(world)) || any(isinf(world))) { atomicOr(invalidPosition,1u); continue; }
+    localLower=min(localLower,world);
+    localUpper=max(localUpper,world);
+  }
+  const vec3 subgroupLower=subgroupMin(localLower);
+  const vec3 subgroupUpper=subgroupMax(localUpper);
+  if(subgroupElect()) {
+    lower[gl_SubgroupID]=subgroupLower;
+    upper[gl_SubgroupID]=subgroupUpper;
+  }
+  barrier();
+  // Quest's 64-wide subgroup finishes here. Devices using smaller subgroups
+  // merge all leader results; no subgroup size assumption affects correctness.
+  if(gl_NumSubgroups>1u) {
+    if(lane==0u) {
+      for(uint i=1u;i<gl_NumSubgroups;++i) {
+        lower[0]=min(lower[0],lower[i]);
+        upper[0]=max(upper[0],upper[i]);
+      }
+    }
+    barrier();
+  }
+  const uint tileWidth=uint((size.x+15)/16);
+  const uint base=(gl_WorkGroupID.y*tileWidth+gl_WorkGroupID.x)*TileStride;
+  const bool empty=any(greaterThan(lower[0],upper[0]));
+  if(!empty || invalidPosition!=0u) {
+    for(uint i=lane;i<args[1];i+=64u) {
+      const LightSource light=lights[i];
+      bool keep=invalidPosition!=0u || any(isnan(light.pos)) || any(isinf(light.pos)) ||
+                isnan(light.range) || isinf(light.range) || light.range<=0.0;
+      if(!keep) {
+        const vec3 delta=light.pos-clamp(light.pos,lower[0],upper[0]);
+        const float pad=0.25+max(max(abs(light.pos.x),abs(light.pos.y)),abs(light.pos.z))*0.000002;
+        keep=dot(delta,delta)<=(light.range+pad)*(light.range+pad);
+      }
+      if(keep) {
+        const uint slot=atomicAdd(count,1u);
+        if(slot<TileCapacity) tiles[base+1u+slot]=i;
+      }
+    }
+  }
+  barrier();
+  if(lane==0u) tiles[base]=count;
+}

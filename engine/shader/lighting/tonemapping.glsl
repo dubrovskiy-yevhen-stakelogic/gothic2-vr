@@ -1,0 +1,91 @@
+#ifndef TONEMAPPING_GLSL
+#define TONEMAPPING_GLSL
+
+#include "common.glsl"
+
+vec3 jodieReinhardTonemapInv(vec3 c) {
+  // rgb / (1 - lum(rgb))
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return c / max(1.0 / 32768.0, 1.0 - lum);
+  }
+
+vec3 jodieReinhardTonemap(vec3 c){
+  // From: https://www.shadertoy.com/view/tdSXzD
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  vec3 tc = c / (c + 1.0);
+  return mix(c / (l + 1.0), tc, tc);
+  }
+
+vec3 acesTonemap(vec3 x) {
+  const float a = 2.51;
+  const float b = 0.03;
+  const float c = 2.43;
+  const float d = 0.59;
+  const float e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+  }
+
+vec3 acesTonemapInv(vec3 x) {
+  // Narkowicz 2015, "ACES Filmic Tone Mapping Curve"
+  const float a = 2.51;
+  const float b = 0.03;
+  const float c = 2.43;
+  const float d = 0.59;
+  const float e = 0.14;
+  return (-0.59 * x + 0.03 - sqrt(-1.0127 * x*x + 1.3702 * x + 0.0009)) / (2.0 * (2.43*x - 2.51));
+  }
+
+vec3 textureEmmisive(vec3 rgb) {
+  const vec3 linear = srgbDecode(rgb);
+  return acesTonemapInv(linear) * 3.0;
+  }
+
+vec3 textureAlbedo(vec3 rgb) {
+  // return vec3(0.58, 0.49, 0.46); // brick
+  // return vec3(0.26, 0.11, 0.06); // brick2
+  // return vec3(0.52, 0.41, 0.36); // wood
+  // return vec3(0.48, 0.53, 0.30); // grass
+  // return vec3(0.44, 0.39, 0.23); // sand
+  // return vec3(0.9);
+  // return acesTonemapInv(linear*0.8);
+  // return acesTonemapInv(linear*0.78+0.001);
+
+  // HACK: need to preserve look-and-fill of original graphics
+  const vec3 linear = srgbDecode(rgb);
+  return acesTonemapInv(linear*0.78+0.001)*5.0; // adjusted to have 'realistic' albedo values
+  }
+
+struct VideoSettings {
+  float brightness;
+  float contrast;
+  float gamma;
+  float mulExposure;
+  vec4  hdr;
+  };
+
+vec3 gameTonemap(vec3 color, const VideoSettings s) {
+  color *= s.mulExposure;
+
+  // Brightness & Contrast
+  color = max(vec3(0), color + vec3(s.brightness));
+  color = color * vec3(s.contrast);
+
+  // Tonemapping
+  if(s.hdr.x>0.0) {
+    // Preserve the SDR curve through unit scene intensity, then retain brighter highlights.
+    // The smooth extension is bounded by the display peak relative to paper white.
+    vec3 highlight = min(max(color - vec3(1.0), vec3(0.0)), vec3(1000.0));
+    highlight *= highlight;
+    color = acesTonemap(color) + max(s.hdr.x-1.0, 0.0) * highlight/(vec3(1.0)+highlight);
+    } else {
+    color = acesTonemap(color);
+    }
+
+  // Gamma
+  //color = srgbEncode(color);
+  color = pow(color, vec3(s.gamma));
+
+  return color;
+  }
+
+#endif

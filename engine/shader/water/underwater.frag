@@ -1,0 +1,41 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(location = 0) out vec4 outColor;
+
+layout(binding = 0, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+layout(binding = 1) uniform sampler2D zbuffer;
+
+// fixme: copy-paste
+vec4 waterScatter(vec3 back, vec3 normal, const float len) {
+  const vec3 transmittance = waterTransmittance(len);
+#if defined(SCATTERING)
+  const float f       = fresnel(scene.sunDir,normal,IorWater);
+  const vec3  scatter = f * scene.sunColor * (1-exp(-len/20000.0)) * scene.exposure;
+  return vec4(scatter*transmittance, 1);
+#else
+  return vec4(transmittance, 1);
+#endif
+  }
+
+vec3 unproject(vec4 screen) {
+  const vec4 pos4 = scene.viewProjectInv * screen;
+  return pos4.xyz/pos4.w;
+  }
+
+void main() {
+  const vec2  fragCoord = (gl_FragCoord.xy*scene.screenResInv)*2.0-vec2(1.0);
+  const float depth     = texelFetch(zbuffer,  ivec2(gl_FragCoord.xy), 0).r;
+
+  const vec3  camPos    = unproject(vec4(0,0,0, 1.0));
+  const vec3  wPos      = unproject(vec4(fragCoord.x, fragCoord.y, depth, 1.0));
+
+  const float len = length(wPos-camPos);
+  outColor = waterScatter(vec3(1),vec3(0,1,0),len);
+  }

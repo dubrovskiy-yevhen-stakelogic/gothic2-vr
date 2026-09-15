@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(CpuTraceTests LANGUAGES CXX)
+enable_testing()
+add_executable(cpu-trace-tests main.cpp ../../Engine/utility/cputrace.cpp)
+target_compile_features(cpu-trace-tests PRIVATE cxx_std_20)
+target_compile_definitions(cpu-trace-tests PRIVATE __ANDROID__)
+target_include_directories(cpu-trace-tests PRIVATE mock ../../Engine/utility)
+add_test(NAME cpu-trace-pairing COMMAND cpu-trace-tests)

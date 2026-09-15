@@ -1,0 +1,180 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+
+#include "common.glsl"
+#include "scene.glsl"
+
+#if defined(INIT)
+layout(local_size_x=1) in;
+#else
+layout(local_size_x=64) in;
+layout(binding=0,std140) uniform UboScene { SceneDesc scene; };
+layout(binding=1,std430) readonly buffer InputLights { LightSource inputLights[]; };
+layout(binding=2) uniform sampler2D hiZ;
+layout(binding=3,std430) writeonly buffer OutputLights { LightSource outputLights[]; };
+#endif
+// VkDrawIndexedIndirectCommand: indexCount, instanceCount, firstIndex,
+// vertexOffset, firstInstance. Output light capacity must cover lightCount.
+layout(binding=4,std430) buffer DrawArguments { uint args[]; };
+// Second compact list for the light-slab route (lighting/light_tiles_slab.comp):
+// lights whose projected screen bounds cover at least push.slabCoverage of the
+// screen. slabArgs (12 words): [0] slab light count, [1] lit tiles (written by
+// the slab builder for diagnostics), [2..3] unused, [4..6] the builder's
+// VkDispatchIndirectCommand (one workgroup per 16x16 tile, all zero while the
+// list is empty), [7] unused, [8..11] the VkDrawIndirectCommand of the
+// fullscreen slab pass (3 vertices, all zero while the list is empty). An
+// empty slab list therefore costs neither a builder dispatch nor a draw.
+#if defined(INIT)
+layout(binding=5,std430) writeonly buffer SlabArguments { uint slabArgs[]; };
+#else
+layout(binding=5,std430) writeonly buffer SlabLights { LightSource slabLights[]; };
+layout(binding=6,std430) buffer SlabArguments { uint slabArgs[]; };
+#endif
+layout(push_constant,std430) uniform Push {
+  uint  lightCount;
+  uint  indexCount;
+  float znear;
+  float slabCoverage; // >1 sends every light to the volume route
+  uint  tileWidth;    // slab builder workgroups (16x16 tiles) per row
+  uint  tileHeight;   // ... and per column
+  } push;
+
+#if !defined(INIT)
+// Kept identical to materials/visibility_pass.comp; the host test verifies
+// source equivalence. Apply extra conservative padding at the call site.
+float hiZFetch(in sampler2D hiZ, in ivec2 ibbox[2]) {
+  if(ibbox[0]==ibbox[1])
+    return texelFetch(hiZ, ibbox[0], 0).x;
+
+  const uint sz  = max(ibbox[1].x-ibbox[0].x, ibbox[1].y-ibbox[0].y);
+  const int  mip = findMSB(sz - 1) + 1; // log2 of next pot
+
+  ibbox[0].x = (ibbox[0].x >> mip);
+  ibbox[0].y = (ibbox[0].y >> mip);
+
+  ivec2 hiZsize = textureSize(hiZ,mip);
+  float z =  texelFetchOffset(hiZ, ibbox[0], mip, ivec2(0,0)).x;
+  if(ibbox[0].x+1<hiZsize.x)
+    z = max(z, texelFetchOffset(hiZ, ibbox[0], mip, ivec2(1,0)).x);
+  if(ibbox[0].y+1<hiZsize.y)
+    z = max(z, texelFetchOffset(hiZ, ibbox[0], mip, ivec2(0,1)).x);
+  if(ibbox[0].x+1<hiZsize.x && ibbox[0].y+1<hiZsize.y)
+    z = max(z, texelFetchOffset(hiZ, ibbox[0], mip, ivec2(1,1)).x);
+
+  return z;
+  }
+
+bool projectSphere(const vec4 sphere, out vec4 aabb, out float depthMin) {
+  const vec3  c     = (scene.view * vec4(sphere.xyz, 1)).xyz;
+  const float R     = sphere.w;
+  const float znear = push.znear;
+
+  if(c.z - R < znear) {
+    depthMin = 0;
+    aabb     = vec4(0,0,1,1);
+    return true;
+    }
+
+  float z = c.z - R;
+  depthMin  = scene.project[3][2]/z + scene.project[2][2];
+  float P00 = scene.project[0][0];
+  float P11 = scene.project[1][1];
+
+  vec3  cr   = c * R;
+  float czr2 = c.z * c.z - R * R;
+
+  float vx   = sqrt(c.x * c.x + czr2);
+  float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+  float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+  float vy   = sqrt(c.y * c.y + czr2);
+  float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+  float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+  // OpenXR eyes have off-axis projections. Apply the principal-point offset
+  // before sampling HiZ, and preserve min/max if a projection axis is flipped.
+  vec2 lo = vec2(minx * P00, miny * P11) + scene.project[2].xy;
+  vec2 hi = vec2(maxx * P00, maxy * P11) + scene.project[2].xy;
+  aabb = vec4(min(lo, hi), max(lo, hi))*0.5 + vec4(0.5);
+  return true;
+  }
+
+bool hiZTest(vec4 sbbox, float depthMin) {
+  if(depthMin<=0)
+    return true;
+
+  ivec2 hiZsize = textureSize(hiZ,0);
+  ivec2 ibbox[2];
+  ibbox[0] = ivec2(sbbox.xy * scene.screenRes) / scene.hiZTileSize;
+  ibbox[1] = ivec2(sbbox.zw * scene.screenRes) / scene.hiZTileSize;
+  ibbox[0] = clamp(ibbox[0], ivec2(0), hiZsize - ivec2(1));
+  ibbox[1] = clamp(ibbox[1], ivec2(0), hiZsize - ivec2(1));
+
+  float bz      = packHiZ(depthMin);
+  float z       = hiZFetch(hiZ, ibbox);
+  if(bz > z)
+    return false;
+  return true;
+  }
+
+// coverage: fraction of the screen inside the light's projected bounds
+// (1 when unbounded or uncertain). Only used to choose the shading route.
+bool lightMayContribute(const LightSource light, out float coverage) {
+  coverage=1.0;
+  if(any(isnan(light.pos)) || any(isinf(light.pos)) ||
+     isnan(light.range) || isinf(light.range) || light.range<=0.0)
+    return true;
+  vec4 bounds;
+  float nearest;
+  if(!projectSphere(vec4(light.pos,light.range),bounds,nearest))
+    return true;
+  if(any(isnan(bounds)) || any(isinf(bounds)) || isnan(nearest) || isinf(nearest) ||
+     nearest<=0.0 || any(lessThanEqual(scene.hiZTileSize,ivec2(0))))
+    return true;
+  {
+    const vec4 c=clamp(bounds,vec4(0.0),vec4(1.0));
+    const float area=max(c.z-c.x,0.0)*max(c.w-c.y,0.0);
+    coverage=(isnan(area) || isinf(area)) ? 1.0 : area;
+  }
+  // Bound the complete sphere, never only its centre. Near-plane crossings
+  // above always survive. One raster pixel protects the projected silhouette;
+  // two R16 units in packed-depth space protect a tangent depth comparison.
+  const vec2 pad=scene.screenResInv;
+  bounds=clamp(bounds+vec4(-pad,pad),vec4(0.0),vec4(1.0));
+  nearest=max(0.0,nearest-2.0/(65535.0*20.0));
+  return hiZTest(bounds,nearest);
+  }
+#endif
+
+void main() {
+#if defined(INIT)
+  if(gl_GlobalInvocationID.x!=0) return;
+  args[0]=push.indexCount;
+  args[1]=0;
+  args[2]=0;
+  args[3]=0;
+  args[4]=0;
+  for(uint k=0; k<12; ++k)
+    slabArgs[k]=0;
+#else
+  const uint i=gl_GlobalInvocationID.x;
+  if(i>=push.lightCount) return;
+  const LightSource light=inputLights[i];
+  float coverage;
+  if(!lightMayContribute(light,coverage)) return;
+  if(coverage>=push.slabCoverage) {
+    // Large on screen: one masked fullscreen evaluation is cheaper than an
+    // overlapping volume. Every light lands in exactly one list.
+    const uint slabId=atomicAdd(slabArgs[0],1);
+    slabLights[slabId]=light;
+    if(slabId==0) {
+      // First slab light: enable the builder dispatch and the fullscreen pass.
+      slabArgs[4]=push.tileWidth; slabArgs[5]=push.tileHeight; slabArgs[6]=1;
+      slabArgs[8]=3; slabArgs[9]=1; slabArgs[10]=0; slabArgs[11]=0;
+      }
+    return;
+    }
+  const uint outputId=atomicAdd(args[1],1);
+  outputLights[outputId]=light;
+#endif
+  }

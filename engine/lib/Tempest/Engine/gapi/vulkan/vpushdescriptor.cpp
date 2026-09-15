@@ -1,0 +1,376 @@
+#if defined(TEMPEST_BUILD_VULKAN)
+#include "vpushdescriptor.h"
+
+#include "gapi/vulkan/vaccelerationstructure.h"
+#include "gapi/vulkan/vtexture.h"
+#include "gapi/vulkan/vdescriptorarray.h"
+#include "gapi/vulkan/vdevice.h"
+
+using namespace Tempest;
+using namespace Tempest::Detail;
+
+VPushDescriptor::DescPool::DescPool(VDevice &dev) {
+  impl = dev.descPool.allocPool();
+  }
+
+VPushDescriptor::ResPool::ResPool(VDevice &dev, uint32_t size) {
+  auto mem = dev.descAlloc.alloc(size);
+  dPtr  = mem.ptr;
+  alloc = 0;
+  }
+
+VPushDescriptor::VPushDescriptor(VDevice &dev)
+  :dev(dev) {
+  }
+
+VPushDescriptor::~VPushDescriptor() {
+  reset();
+  }
+
+void VPushDescriptor::reset() {
+  descPool.reserve(descPool.size());
+  for(auto& i:descPool)
+    dev.descPool.freePool(i.impl);
+  descPool.clear();
+
+  resPool.reserve(resPool.size());
+  for(auto& i:resPool) {
+    dev.descAlloc.free(i.dPtr, RES_ALLOC_SZ);
+    }
+  resPool.clear();
+  memHeap.clear();
+
+  lastResHeap = nullptr;
+  lastSmpHeap = nullptr;
+  }
+
+void VPushDescriptor::onNextCmdChunk() {
+  lastResHeap = nullptr;
+  lastSmpHeap = nullptr;
+  }
+
+VkDescriptorSet VPushDescriptor::allocSet(const VkDescriptorSetLayout dLayout) {
+  if(descPool.empty())
+    descPool.emplace_back(DescPool(dev));
+
+  for(int i=0; i<2; ++i) {
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool     = descPool.back().impl;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts        = &dLayout;
+
+    VkDescriptorSet desc = VK_NULL_HANDLE;
+    VkResult        ret  = vkAllocateDescriptorSets(dev.device.impl, &allocInfo, &desc);
+    if(ret==VK_ERROR_FRAGMENTED_POOL || ret==VK_ERROR_OUT_OF_POOL_MEMORY) {
+      descPool.emplace_back(DescPool(dev));
+      continue;
+      }
+    vkAssert(ret);
+    return desc;
+    }
+  vkAssert(VK_ERROR_OUT_OF_HOST_MEMORY);
+  return VK_NULL_HANDLE;
+  }
+
+VkDescriptorSet VPushDescriptor::allocSet(const LayoutDesc& lay) {
+  auto lt = dev.setLayouts.findLayout(lay);
+  return allocSet(lt);
+  }
+
+uint32_t VPushDescriptor::allocHeap(VkCommandBuffer cmd, const uint32_t sz, const uint32_t step) {
+  if(resPool.empty()) {
+    resPool.emplace_back(dev, step);
+    }
+
+  if((step-resPool.back().alloc) < sz) {
+    resPool.emplace_back(dev, step);
+    }
+
+  // FIXME: pool-allocation might be outdated
+  auto& px = resPool.back();
+  const uint32_t ptr = px.dPtr + px.alloc;
+  px.alloc += sz;
+  return ptr;
+  }
+
+void VPushDescriptor::pushHeap(VkCommandBuffer cmd, uint32_t* indices, const PushBlock& pb, const LayoutDesc& lay, const Bindings& binding) {
+  const auto resSize = dev.props.resourceDescriptorSize;
+
+  const auto numRes = lay.numResources();
+  auto       ptr    = allocHeap(cmd, numRes, RES_ALLOC_SZ);
+  auto       mem    = numRes>0 ? dev.descAlloc.currentMemory() : DSharedPtr<VDescriptorHeap*>();
+
+  auto res = mem ? mem.handler->hptr : nullptr;
+  res += ptr*resSize;
+  for(size_t i=0; i<MaxBindings; ++i) {
+    if(((1u << i) & lay.active)==0)
+      continue;
+    if(((1u << i) & lay.array)!=0) {
+      const auto data = reinterpret_cast<VDescriptorHeapArray*>(binding.data[i]);
+      if(lay.bindings[i]==ShaderReflection::Texture) {
+        indices[0] = (data->handleR() & 0xFFFFF) | (data->handleS() << 20);
+        }
+      else if(lay.bindings[i]==ShaderReflection::Sampler) {
+        indices[0] = data->handleS();
+        }
+      else {
+        indices[0] = data->handleR();
+        }
+      ++indices;
+      continue;
+      }
+
+    VPushDescriptor::write(dev, res, lay.bindings[i], binding.data[i], binding.offset[i], binding.map[i]);
+
+    if(lay.bindings[i]!=ShaderReflection::Sampler && lay.bindings[i]!=ShaderReflection::Texture) {
+      indices[0] = ptr; ++indices;
+      res += resSize;
+      ptr += 1;
+      }
+    if(lay.bindings[i]==ShaderReflection::Texture) {
+      const auto smpId = dev.samplers.getH(binding.smp[i], reinterpret_cast<VTexture*>(binding.data[i]));
+      indices[0] = (ptr & 0xFFFFF) | (smpId << 20);
+      res += resSize;
+      ptr += 1;
+      ++indices;
+      }
+    if(lay.bindings[i]==ShaderReflection::Sampler) {
+      indices[0] = dev.samplers.getH(binding.smp[i]); ++indices;
+      }
+    }
+
+  auto smp = lay.numSamplers()>0 ? dev.descAlloc.currentMemorySmp() : DSharedPtr<VDescriptorHeap*>();
+  bindHeap(cmd, mem, smp);
+  }
+
+void VPushDescriptor::bindHeap(VkCommandBuffer cmd, const DSharedPtr<VDescriptorHeap*>& res, const DSharedPtr<VDescriptorHeap*>& smp) {
+  auto vkCmdBindResourceHeapEXT = dev.vkCmdBindResourceHeapEXT;
+  auto vkCmdBindSamplerHeapEXT  = dev.vkCmdBindSamplerHeapEXT;
+
+  if(res && lastResHeap!=res.handler) {
+    lastResHeap = res.handler;
+    memHeap.push_back(res);
+
+    auto& resources = *lastResHeap;
+    VkBindHeapInfoEXT info = {VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT};
+    info.heapRange.address   = resources.toDeviceAddress(dev);
+    info.heapRange.size      = resources.size();
+    info.reservedRangeOffset = 0;
+    info.reservedRangeSize   = dev.props.resourceHeapReserve;
+    vkCmdBindResourceHeapEXT(cmd, &info);
+    }
+
+  if(smp && lastSmpHeap!=smp.handler) {
+    lastSmpHeap = smp.handler;
+    memHeap.push_back(smp);
+
+    auto& samplers = *lastSmpHeap;
+    VkBindHeapInfoEXT info = {VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT};
+    info.heapRange.address   = samplers.toDeviceAddress(dev);
+    info.heapRange.size      = samplers.size();
+    info.reservedRangeOffset = 0;
+    info.reservedRangeSize   = dev.props.samplerHeapReserve;
+    vkCmdBindSamplerHeapEXT(cmd, &info);
+    }
+  }
+
+VkDescriptorSet VPushDescriptor::push(const PushBlock& pb, const LayoutDesc& lay, const Bindings& binding) {
+  auto set = allocSet(lay);
+
+  WriteInfo              winfo[MaxBindings] = {};
+  VkWriteDescriptorSet   wr   [MaxBindings] = {};
+  uint32_t               cntWr = 0;
+
+  for(size_t i=0; i<MaxBindings; ++i) {
+    auto  cls = lay.bindings[i];
+    auto& wx  = wr[cntWr];
+    VPushDescriptor::write(dev, wx, winfo[cntWr], uint32_t(i), cls,
+                           binding.data[i], binding.offset[i], binding.map[i], binding.smp[i]);
+    wx.dstSet = set;
+    if(wx.descriptorCount>0)
+      ++cntWr;
+    }
+
+  vkUpdateDescriptorSets(dev.device.impl, cntWr, wr, 0, nullptr);
+  return set;
+  }
+
+void VPushDescriptor::write(VDevice& dev, VkWriteDescriptorSet& wx, WriteInfo& infoW, uint32_t dstBinding,
+                            ShaderReflection::Class cls, AbstractGraphicsApi::NoCopy* data, uint32_t offset,
+                            const ComponentMapping& mapping, const Sampler& smp) {
+  switch(cls) {
+    case ShaderReflection::Ubo:
+    case ShaderReflection::SsboR:
+    case ShaderReflection::SsboRW: {
+      auto* buf = reinterpret_cast<VBuffer*>(data);
+
+      VkDescriptorBufferInfo& info = infoW.buffer;
+      info.buffer = buf!=nullptr ? buf->impl : VK_NULL_HANDLE;
+      info.offset = offset;
+      //TODO: head only ssbo
+      info.range  = VK_WHOLE_SIZE; //(buf!=nullptr && slot.varByteSize==0) ? slot.byteSize : VK_WHOLE_SIZE;
+
+      if(!dev.props.hasRobustness2 && buf==nullptr) {
+        //NOTE1: use of null-handle is not allowed, unless VK_EXT_robustness2
+        //NOTE2: sizeof 1 is rouned up in shader; and sizeof 0 is illegal but harmless(hopefully)
+        info.buffer = dev.dummySsbo().impl;
+        info.offset = 0;
+        info.range  = 0;
+        }
+
+      wx.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      wx.dstSet          = VK_NULL_HANDLE;
+      wx.dstBinding      = dstBinding;
+      wx.dstArrayElement = 0;
+      wx.descriptorType  = nativeFormat(cls);
+      wx.descriptorCount = 1;
+      wx.pBufferInfo     = &info;
+      break;
+      }
+    case ShaderReflection::Texture:
+    case ShaderReflection::Image:
+    case ShaderReflection::ImgR:
+    case ShaderReflection::ImgRW: {
+      auto*    tex       = reinterpret_cast<VTexture*>(data);
+      uint32_t mipLevel  = offset;
+      bool     is3DImage = tex->is3D; // TODO: cast 3d to 2d, based on dest descriptor
+      bool     isUAV     = (cls==ShaderReflection::ImgR || cls==ShaderReflection::ImgRW);
+
+      VkDescriptorImageInfo& info = infoW.image;
+      if(cls==ShaderReflection::Texture) {
+        info.sampler = dev.samplers.get(smp, tex);
+        }
+      info.imageView   = tex->view(mapping, mipLevel, is3DImage, isUAV);
+      info.imageLayout = tex->defaultLayout();
+
+      wx.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      wx.dstSet          = VK_NULL_HANDLE;
+      wx.dstBinding      = dstBinding;
+      wx.dstArrayElement = 0;
+      wx.descriptorType  = nativeFormat(cls);
+      wx.descriptorCount = 1;
+      wx.pImageInfo      = &info;
+      break;
+      }
+    case ShaderReflection::Sampler: {
+      VkDescriptorImageInfo& info = infoW.image;
+      info.sampler = dev.samplers.get(smp);
+
+      wx.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      wx.dstSet          = VK_NULL_HANDLE;
+      wx.dstBinding      = dstBinding;
+      wx.dstArrayElement = 0;
+      wx.descriptorType  = nativeFormat(cls);
+      wx.descriptorCount = 1;
+      wx.pImageInfo      = &info;
+      break;
+      }
+    case ShaderReflection::Tlas: {
+      auto* tlas = reinterpret_cast<VAccelerationStructure*>(data);
+
+      auto& info = infoW.tlas;
+      info.sType                      = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+      info.accelerationStructureCount = 1;
+      info.pAccelerationStructures    = &tlas->impl;
+
+      wx.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      wx.pNext           = &info;
+      wx.dstSet          = VK_NULL_HANDLE;
+      wx.dstBinding      = dstBinding;
+      wx.dstArrayElement = 0;
+      wx.descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+      wx.descriptorCount = 1;
+      break;
+      }
+    case ShaderReflection::Push:
+    case ShaderReflection::Count:
+      break;
+    }
+  }
+
+void VPushDescriptor::write(VDevice& dev, void* resPtr, ShaderReflection::Class cls,
+                            AbstractGraphicsApi::NoCopy* data, uint32_t offset, const ComponentMapping& mapping) {
+  auto vkWriteResourceDescriptorsEXT = dev.vkWriteResourceDescriptorsEXT;
+
+  VkResourceDescriptorInfoEXT res = {VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT};
+  switch(cls) {
+    case ShaderReflection::Ubo:
+      res.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      break;
+    case ShaderReflection::Texture:
+    case ShaderReflection::Image:
+      res.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      break;
+    case ShaderReflection::Sampler:
+      res.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+      break;
+    case ShaderReflection::SsboR:
+    case ShaderReflection::SsboRW:
+      res.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      break;
+    case ShaderReflection::ImgR:
+    case ShaderReflection::ImgRW:
+      res.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+      break;
+    case ShaderReflection::Tlas:
+      res.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+      break;
+    case ShaderReflection::Push:
+    case ShaderReflection::Count:
+      break;
+    }
+
+  switch(cls) {
+    case ShaderReflection::Ubo:
+    case ShaderReflection::SsboR:
+    case ShaderReflection::SsboRW:{
+      auto* buf = reinterpret_cast<VBuffer*>(data);
+
+      VkDeviceAddressRangeEXT info = {};
+      info.address = buf!=nullptr ? buf->toDeviceAddress(dev) + offset : 0;
+      info.size    = buf!=nullptr ? buf->size() - offset : 0;
+
+      //NOTE1: assume VK_EXT_robustness2, for sake of null descriptor
+      res.data.pAddressRange = buf!=nullptr ? &info : nullptr;
+
+      VkHostAddressRangeEXT dest = {resPtr, dev.props.resourceDescriptorSize};
+      vkAssert(vkWriteResourceDescriptorsEXT(dev.device.impl, 1, &res, &dest));
+      break;
+      }
+    case ShaderReflection::Texture:
+    case ShaderReflection::Image:
+    case ShaderReflection::ImgR:
+    case ShaderReflection::ImgRW:{
+      if(data==nullptr)
+        return;
+      auto*    tex       = reinterpret_cast<VTexture*>(data);
+      uint32_t mipLevel  = offset;
+      bool     is3DImage = tex->is3D; // TODO: cast 3d to 2d, based on dest descriptor
+      bool     isUAV     = (cls==ShaderReflection::ImgR || cls==ShaderReflection::ImgRW);
+
+      tex->descriptor(resPtr, mapping, mipLevel, is3DImage, isUAV);
+      break;
+      }
+    case ShaderReflection::Tlas: {
+      auto* tlas = reinterpret_cast<VAccelerationStructure*>(data);
+
+      VkDeviceAddressRangeEXT info = {};
+      info.address = tlas!=nullptr ? tlas->toDeviceAddress(dev) : 0;
+      info.size    = 0; //buf!=nullptr  ? buf->size() : 0;
+
+      res.data.pAddressRange = &info;
+
+      VkHostAddressRangeEXT dest = {resPtr, dev.props.resourceDescriptorSize};
+      vkAssert(vkWriteResourceDescriptorsEXT(dev.device.impl, 1, &res, &dest));
+      break;
+      }
+    case ShaderReflection::Sampler:
+    case ShaderReflection::Push:
+    case ShaderReflection::Count:
+      break;
+    }
+  }
+
+#endif
+

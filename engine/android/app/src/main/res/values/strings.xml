@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="import_game_files">Import files</string>
+    <string name="setup_brand">OpenGothic</string>
+    <string name="setup_title">Add your game files</string>
+    <string name="setup_description">Choose the archive for your game, created by the setup scripts on your computer. Use a clean installation without Union or Windows plugins.</string>
+    <string name="setup_choose">Choose game archive</string>
+    <string name="setup_retry">Check copied or bundled files</string>
+    <string name="setup_retry_error">Retry setup</string>
+    <string name="setup_waiting">Select your game archive to get started.</string>
+    <string name="setup_import_existing">Select your game archive. Quit the game before importing a different installation.</string>
+    <string name="setup_preserved">Existing saves and settings are kept. Completed files are reused if an import is interrupted.</string>
+    <string name="setup_working_title">Preparing game files</string>
+    <string name="setup_working_description">Keep this screen open. The game will start when the files are ready.</string>
+    <string name="setup_checking">Checking the archive. This can take a few minutes.</string>
+    <string name="setup_error_title">Import couldn\'t finish</string>
+    <string name="setup_error_description">Check the details below, then retry or choose another archive.</string>
+    <string name="setup_error">%1$s\n\nCompleted files, saves and settings have been kept.</string>
+    <string name="setup_progress">%1$d%%</string>
+    <string name="setup_storage_unavailable">App storage is unavailable. Unlock the phone and retry.</string>
+    <string name="setup_location">Where are the files stored?</string>
+    <string name="setup_location_description">Game files are imported into:\n%1$s\n\nYou can also copy your installation here with ADB, then check the copied files.</string>
+</resources>

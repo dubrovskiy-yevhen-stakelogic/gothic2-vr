@@ -1,0 +1,175 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "virtual_shadow/vsm_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(binding = 0, std430) buffer Pages { VsmHeader header; uint  pageList[]; } vsm;
+layout(binding = 1, r32ui)  uniform uimage3D pageTbl;
+layout(binding = 2, std430) buffer Omni  { uint pageTblOmni[]; };
+layout(binding = 3, std430) buffer PTmp  { uint size; uint  pageList[]; } vsmTmp;
+
+layout(binding = 4, r32ui)  uniform uimage2D dbg;
+
+const uint NumThreads = gl_WorkGroupSize.x*gl_WorkGroupSize.y*gl_WorkGroupSize.z;
+
+shared uint pageListSize;
+shared uint pageList[VSM_MAX_PAGES];
+
+shared uint bits[(NumThreads+31)/32];
+
+shared uint ladder  [VSM_PAGE_PER_ROW];
+shared uint ladderWr[VSM_PAGE_PER_ROW];
+
+void storePage(ivec2 pId, ivec3 at, ivec2 tile, ivec2 size) {
+  const uint pageId = pId.x + pId.y*VSM_PAGE_PER_ROW;
+
+  vsm.pageList[pageId] = packVsmPageInfo(at, size);
+  atomicMax(vsm.header.pageCount, pageId+1);
+
+  at += ivec3(tile,0);
+  const uint prime = imageLoad(pageTbl, at).r & 0x1;
+  imageStore(pageTbl, at, uvec4((pageId << 16u) | prime));
+
+  imageStore(dbg, pId, uvec4(size.y));
+  }
+
+void storePage(ivec2 pId, uint lightId, uint face, ivec2 at, ivec2 tile, ivec2 size) {
+  const uint pageId = pId.x + pId.y*VSM_PAGE_PER_ROW;
+
+  vsm.pageList[pageId] = packVsmPageInfo(lightId, face, at, size);
+  atomicMax(vsm.header.pageCount, pageId+1);
+
+  pageTblOmni[lightId*6+face] = (pageId << 16u) | (size.x&0xF);
+  //imageStore(dbg, pId, uvec4(size.y>0 ? 9 : 0));
+  imageStore(dbg, pId, uvec4(size.y));
+  }
+
+uint bitCountShared(uint till) {
+  uint n = till/32;
+  uint f = till%32;
+  uint r = 0;
+  for(uint i=0; i<n; ++i)
+    r += bitCount(bits[i]);
+  r += bitCount(bits[n] & ((1u << f)-1u));
+  return r;
+  }
+
+void listPages() {
+  const uint lane = gl_LocalInvocationIndex;
+
+  pageListSize = vsm.header.pageCount;
+  for(uint i=lane; i<pageListSize; i+=NumThreads)
+    pageList[i] = vsm.pageList[i];
+  }
+
+ivec2 findRowCol(in uint page, const uvec2 size) {
+  // const uint perRow = VSM_PAGE_PER_ROW/size.x;
+  // const uint row    = (page/perRow)*size.y;
+  // const uint col    = (page%perRow)*size.x;
+  // return ivec2(col,row);
+
+  for(uint i=0; i<VSM_PAGE_PER_ROW; i+=size.y) {
+    uint space = (VSM_PAGE_PER_ROW-ladder[i])/size.x;
+    if(page<space)
+      return ivec2(ladder[i] + page*size.x, i);
+    page -= space;
+    }
+  // error
+  return ivec2(-1);
+  }
+
+void layoutPages(uint pageData, bool omni, uvec2 pageSz, uvec2 size) {
+  const uint lane  = gl_LocalInvocationIndex;
+  const bool valid = pageSz==size; // && !omni;
+
+  pageListSize = 0;
+  if(lane < bits.length())
+    bits[lane] = 0;
+  if(lane < ladderWr.length())
+    ladder[lane] = ladderWr[lane];
+  barrier();
+
+  if(valid)
+    atomicOr(bits[lane/32], 1u<<(lane%32));
+  barrier();
+
+  if(valid) {
+    uint id = bitCountShared(lane);
+    pageList[id] = pageData;
+    atomicMax(pageListSize, id+1);
+    }
+  barrier();
+
+  const uint perRow = VSM_PAGE_PER_ROW/size.x;
+  const uint maxPix = pageListSize*(size.x*size.y);
+  // const uint maxPix = 1*(size);
+  for(uint i=lane; i<maxPix; i+=NumThreads) {
+    const uint  page = i / (size.x*size.y);
+    const uint  tile = i % (size.x*size.y);
+    const ivec2 rc   = findRowCol(page, size);
+    if(rc.x<0)
+      break;
+
+    const uint  data = pageList[page];
+    const ivec2 tx   = ivec2(tile/size.y, tile%size.y);
+    if(vsmPageIsOmni(data)) {
+      const uvec2 lightId = unpackLightId(data);
+      const ivec2 at      = unpackVsmPageInfoProj(data);
+      storePage(rc+tx, lightId.x, lightId.y, at, tx, tile==0 ? ivec2(size) : ivec2(0));
+      } else {
+      const ivec3 at = unpackVsmPageInfo(data);
+      storePage(rc+tx, at, tx, tile==0 ? ivec2(size) : ivec2(0));
+      }
+
+    atomicMax(ladderWr[rc.y+tx.y], rc.x + tx.x + 1);
+    }
+  barrier();
+  }
+
+void clearDbg() {
+  uvec2 sz = imageSize(dbg);
+
+  const ivec3 id = ivec3(gl_LocalInvocationID);
+  for(uint x=id.x; x<sz.x; x+=gl_WorkGroupSize.x)
+    for(uint y=id.y; y<sz.y; y+=gl_WorkGroupSize.y)
+      imageStore(dbg, ivec2(x,y), uvec4(0));
+  memoryBarrierImage();
+  }
+
+void main() {
+  const ivec3 at   = ivec3(gl_GlobalInvocationID);
+  const ivec3 id   = ivec3(gl_LocalInvocationID);
+  const uint  lane = gl_LocalInvocationIndex;
+  if(lane < ladderWr.length())
+    ladderWr[lane] = 0;
+  barrier();
+
+  clearDbg();
+  barrier();
+
+  listPages();
+  barrier();
+
+  for(uint i=lane; i<vsm.pageList.length(); i+=NumThreads)
+    vsm.pageList[i] = 0;
+  memoryBarrierBuffer();
+  barrier();
+
+  const uint  frag = lane<pageListSize ? pageList[lane] : 0;
+  const bool  omni = vsmPageIsOmni(frag);
+  const uvec2 size = unpackVsmPageSize(frag);
+  barrier();
+
+  layoutPages(frag, omni, size, uvec2(4));
+  layoutPages(frag, omni, size, uvec2(1, 4));
+  layoutPages(frag, omni, size, uvec2(2));
+  layoutPages(frag, omni, size, uvec2(1, 2));
+  layoutPages(frag, omni, size, uvec2(1));
+  }

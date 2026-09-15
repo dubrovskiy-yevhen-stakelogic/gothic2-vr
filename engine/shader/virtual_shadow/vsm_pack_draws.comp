@@ -1,0 +1,83 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_ARB_separate_shader_objects : enable
+
+#include "virtual_shadow/vsm_common.glsl"
+#include "scene.glsl"
+
+layout(local_size_x = 128) in; // NOTE: bigger == better
+
+layout(binding = 0, std140) uniform          UboScene     { SceneDesc   scene;          };
+layout(binding = 1, std430) readonly  buffer PayloadSrc   { uvec4       payloadSrc[];   };
+layout(binding = 2, std430) writeonly buffer PayloadDst   { uvec4       payload[];      };
+layout(binding = 3, std430) buffer           IndirectBuf  { IndirectCmd cmd[];          };
+layout(binding = 4, std430) readonly  buffer Pages        { VsmHeader   header; uint pageList[]; } vsm;
+
+#if defined(PASS0)
+layout(binding = 5, std430) writeonly buffer Indirect     { uvec3       indirectCmd;    };
+#endif
+
+shared uint partialSumm[gl_WorkGroupSize.x];
+
+void mainCmd() {
+  const uint index = gl_LocalInvocationID.x;
+  const uint len   = cmd.length();
+  const uint b     = ((index+0)*len)/gl_WorkGroupSize.x;
+  const uint e     = ((index+1)*len)/gl_WorkGroupSize.x;
+
+  uint sum = 0;
+  for(uint i=b; i<e; ++i) {
+    sum += cmd[i].instanceCount;
+    }
+  partialSumm[index] = sum;
+  barrier();
+
+  uint prefix = 0;
+  for(uint i=0; i<index; ++i) {
+    prefix += partialSumm[i];
+    }
+  barrier();
+
+  for(uint i=b; i<e; ++i) {
+    uint sx = prefix;
+    prefix += cmd[i].instanceCount;
+
+    cmd[i].instanceCount = 0;
+    cmd[i].writeOffset   = sx;
+    }
+
+#if defined(PASS0)
+  if(gl_GlobalInvocationID.x==0) {
+    //indirectCmd = uvec3((vsm.header.meshletCount+gl_WorkGroupSize.x-1)/gl_WorkGroupSize.x, 1, 1);
+    }
+#endif
+  }
+
+void mainClusters() {
+  uint index = gl_GlobalInvocationID.x;
+  if(index>=vsm.header.meshletCount)
+    return;
+
+  const uvec4 cluster    = payloadSrc[index];
+  const uint  instanceId = cluster.x;
+  const uint  meshletId  = cluster.y;
+  const uint  commandId  = cluster.z & 0xFFFF;
+  const uint  bucketId   = cluster.z >> 16;
+  const uint  pageId     = cluster.w;
+
+  uint writeOffset = cmd[commandId].writeOffset;
+  uint at          = atomicAdd(cmd[commandId].instanceCount, 1);
+  payload[writeOffset + at] = uvec4(instanceId, meshletId, bucketId, pageId);
+  //payload[writeOffset + at] = uvec4(index+1);
+  }
+
+void main() {
+#if defined(PASS0)
+  mainCmd();
+#elif defined(PASS1)
+  mainClusters();
+#else
+#error "invalid pass-id"
+#endif
+  }

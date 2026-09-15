@@ -1,0 +1,280 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#include "scene.glsl"
+#include "common.glsl"
+
+#ifdef SSAO_HALF_RES
+#include "half_resolution.glsl"
+#endif
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#include "convergence.glsl"
+
+layout(push_constant, std140) uniform PushConstant {
+  mat4 proj;
+  mat4 projInv;
+  };
+
+layout(binding  = 0) uniform writeonly image2D result;
+layout(binding  = 1, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+
+layout(binding  = 2) uniform sampler2D  gbufDiffuse;
+layout(binding  = 3) uniform usampler2D gbufNormal;
+layout(binding  = 4) uniform sampler2D  depthBuf;
+
+const uint  numSamples     = 32;
+const uint  numIter        = 8;
+const uint  samplesPerStep = numSamples/numIter;
+const float sphereLen      = 100;
+const float unorm16        = 65025;
+
+const int   gridSize       = 5;
+const int   gridQSize      = 25;
+
+ivec2 fragCoord;
+ivec2 screenSize;
+mat3  tangent;
+
+float occlusionAll = 0;
+
+vec2 pyramidUV(vec3 direction) {
+  // https://gamedev.stackexchange.com/questions/169508/octahedral-impostors-octahedral-mapping
+  vec3  octant     = sign(direction);
+  float sum        = dot(direction, octant);
+  vec3  octahedron = direction / sum;
+
+  return 0.5 * vec2(
+              1.0 + octahedron.x + octahedron.y,
+              1.0 + octahedron.y - octahedron.x
+           );
+  }
+
+uint pyramidId(vec3 direction) {
+  ivec2 uv = ivec2(pyramidUV(direction)*gridSize);
+  return uv.x + uv.y*gridSize;
+  }
+
+uint  hits   = 0;
+uint  anySmp = 0;
+float hitV[gridQSize];
+
+void addHit(vec3 dir, float v) {
+  uint uv = pyramidId(dir);
+
+  hits   = hits   | (1u << uv);
+  anySmp = anySmp | (1u << uv);
+
+  float value   = hitV[uv];
+  occlusionAll -= value;
+  occlusionAll += max(value,v);
+
+  hitV[uv] = max(value, v);
+  }
+
+void addMis(vec3 dir) {
+  uint uv = pyramidId(dir);
+  anySmp = anySmp | (1u << uv);
+  }
+
+shared uint shMaxSteps;
+
+float wangHashNoise(uvec2 uv, uint s) {
+  uint seed = (uv.x*1664525u + uv.y) + s;
+  uint hash = wangHash(seed);
+  float value = float(hash) / (4294967296.0);
+  return value;
+  }
+
+int estimateMaxSteps(float z) {
+  if(z>=1.0)
+    return 0; // sky
+  if(z>=0.999)
+    return 1; // almost sky
+  return int(numIter);
+  }
+
+float resolveOcclusion() {
+  float weights = occlusionAll + bitCount(anySmp & (~hits));
+#ifdef SSAO_HALF_RES
+  return weights>0.0 ? occlusionAll/weights : 0.0;
+#else
+  return (occlusionAll/weights);
+#endif
+  }
+
+vec3 unproject(vec3 pos) {
+  return projectiveUnproject(projInv, pos);
+  }
+
+vec3 project(vec3 pos) {
+  return projectiveProject(proj, pos);
+  }
+
+float readZ(in vec2 posf) {
+  return textureLod(depthBuf, posf.xy*0.5+vec2(0.5), 0).r;
+  }
+
+float sampleRadius(uint i, uint maxSmp) {
+  return 0.5+float(i)/float(maxSmp);
+  }
+
+void calcOcclussion(const vec3 at0, const vec3 pos0, const float f0, uint seed, uint step) {
+  [[loop]]
+  for(uint i0=0; i0<samplesPerStep; ++i0) {
+    uint  i      = i0*step + seed;
+    float r      = sampleRadius(i,numSamples);
+    vec3  h      = sampleHemisphereCos(i,numSamples,f0);
+
+    vec3  v      = tangent * h;
+    vec3  at1    = project(pos0 + v*sphereLen*r);
+    if(abs(at1.x)>1.0 || abs(at1.y)>1.0) {
+      continue;
+      }
+
+    float z      = readZ(at1.xy);
+    bool  isHit  = floor(z*32768.0+0.5) < floor(at1.z*32768.0);
+    float distQ  = 1;
+
+    // distance attenuation
+    if(isHit) {
+      vec3  at2  = vec3(at1.xy,z);
+      vec3  pos2 = unproject(at2);
+      vec3  dp   = (pos2.xyz-pos0);
+      float lenQ = dot(dp,dp);
+      distQ = (lenQ/(sphereLen*sphereLen));
+      } else {
+      distQ = 1;
+      }
+
+    // float u      = 0.5;
+    // const float distW = (u*r)/max(u*u, distQ);
+    // const float distW = 1.5/max(0.5, distQ);
+    const float distW = 2.0/(distQ+1);
+    if(isHit) {
+      addHit(h, distW);
+      } else {
+      addMis(h);
+      }
+    }
+  }
+
+vec3 reconstructNormal(const vec3 at0, in vec2 uv){
+  vec2 uv0 = uv; // center
+
+  vec2 uvL = uv - vec2(2, 0) / vec2(screenSize); // left
+  vec2 uvR = uv + vec2(2, 0) / vec2(screenSize); // right
+  vec2 uvT = uv - vec2(0, 2) / vec2(screenSize); // top
+  vec2 uvB = uv + vec2(0, 2) / vec2(screenSize); // bottom
+
+  const vec3 atL = vec3(uvL.xy,readZ(uvL.xy));
+  const vec3 atR = vec3(uvR.xy,readZ(uvR.xy));
+  const vec3 atT = vec3(uvT.xy,readZ(uvT.xy));
+  const vec3 atB = vec3(uvB.xy,readZ(uvB.xy));
+
+  const bool bestL    = (abs(atL.z - at0.z) < abs(atR.z - at0.z));
+  const bool bestT    = (abs(atT.z - at0.z) < abs(atB.z - at0.z));
+
+  const vec3 bestHor  = bestL ? atL : atR;
+  const vec3 bestVert = bestT ? atT : atB;
+
+  vec3 P0 = unproject(at0);
+  vec3 P1 = unproject(bestHor);
+  vec3 P2 = unproject(bestVert);
+
+  vec3 normal = normalize(cross(P2 - P0, P1 - P0));
+  if(bestL != bestT)
+    return -normal;
+  return normal;
+  }
+
+void main() {
+  for(int i=0; i<gridQSize; ++i)
+    hitV[i] = 0;
+
+  if(gl_LocalInvocationIndex==0)
+    shMaxSteps = 0;
+  barrier();
+
+  screenSize = ivec2(textureSize(depthBuf,0));
+  fragCoord  = ivec2(gl_GlobalInvocationID.xy);
+
+#ifdef SSAO_HALF_RES
+  const bool valid = all(lessThan(fragCoord, imageSize(result)));
+  // Keep foreground depth in each 2x2 block and reconstruct using its original pixel coordinates.
+  fragCoord = ssaoNearestDepthPixel(depthBuf, fragCoord);
+#else
+  const bool valid = all(lessThan(fragCoord, screenSize));
+#endif
+  const vec2 inPos = vec2(2*fragCoord+ivec2(1,1))/vec2(screenSize)-vec2(1,1);
+  vec3 norm = vec3(0);
+
+  const vec3 camPos = unproject(vec3(0,0,0));
+  const vec3 at0    = vec3(inPos.xy,readZ(inPos.xy));
+  const vec3 pos0   = unproject(at0);
+
+  if(valid) {
+    const vec3 view = (pos0 - camPos);
+    norm = reconstructNormal(at0, inPos.xy);
+
+    // Compute a tangent frame and rotate the half vector to world space
+    vec3 up   = abs(norm.z) < 0.999f ? vec3(0.0f, 0.0f, 1.0f) : vec3(1.0f, 0.0f, 0.0f);
+    tangent[0] = normalize(cross(up, norm));
+    tangent[1] = cross(norm, tangent[0]);
+    tangent[2] = norm;
+    }
+
+  // const float f0 = M_PI*2.0*interleavedGradientNoise(fragCoord);
+  const float f0 = M_PI*2.0*wangHashNoise(uvec2(fragCoord), 0);
+
+  int maxSteps = estimateMaxSteps(at0.z);
+  atomicMax(shMaxSteps, maxSteps);
+  barrier();
+
+  float occlusion = 0, prev = 0;
+  int  dbg  = 0;
+  int  smp  = int(samplesPerStep);
+  bool eval = valid;
+  for(int i=0; i<shMaxSteps; ++i) {
+    if(eval && i<maxSteps) {
+      dbg       = i+1;
+      smp      += int(samplesPerStep);
+      prev      = occlusion;
+
+      calcOcclussion(at0, pos0, f0, i, numIter);
+
+      occlusion = resolveOcclusion();
+      }
+
+    int samples = (i+1)*int(samplesPerStep);
+    // Convergence is group-wide: no lane has further samples to evaluate.
+    if(ssaoIsSolved(abs(occlusion-prev), samples))
+      break;
+    }
+
+  if(valid) {
+#if 1
+    occlusion = resolveOcclusion();
+#endif
+
+#ifdef SSAO_HALF_RES
+    float ao = clamp(1.0 - occlusion, 0.0, 1.0);
+    if(isnan(ao) || isinf(ao) || at0.z>=1.0)
+      ao = 1.0;
+    // Store the actual representative depth alongside AO for the edge-aware resolve.
+    imageStore(result, ivec2(gl_GlobalInvocationID.xy), vec4(ao, linearDepth(at0.z, scene.clipInfo), 0, 0));
+#else
+    imageStore(result, ivec2(gl_GlobalInvocationID.xy), vec4(1.0 - occlusion));
+#endif
+    // if(dbg>4)
+    //   imageStore(result, ivec2(gl_GlobalInvocationID.xy), vec4(0.0));
+    // imageStore(result, ivec2(gl_GlobalInvocationID.xy), vec4(float(dbg)/10.0));
+    // imageStore(result, ivec2(gl_GlobalInvocationID.xy), vec4(float(smp)/100.0));
+    // imageStore(result, ivec2(gl_GlobalInvocationID.xy), vec4(uintBitsToFloat(vDiff)));
+    }
+  }

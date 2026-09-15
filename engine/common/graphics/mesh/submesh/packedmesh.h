@@ -1,0 +1,251 @@
+#pragma once
+
+#include <zenkit/Mesh.hh>
+#include <zenkit/MultiResolutionMesh.hh>
+#include <zenkit/SoftSkinMesh.hh>
+#include <zenkit/Material.hh>
+
+#include <Tempest/Vec>
+#include "vr/vrbakedlight.h"
+#include <utility>
+
+#include "resources.h"
+
+class Bounds;
+
+class PackedMesh {
+  public:
+    using Vertex        = Resources::Vertex;
+    using VertexA       = Resources::VertexA;
+
+    enum {
+      MaxVert     = 64,
+      MaxPrim     = 64,
+      MaxInd      = MaxPrim * 3,
+      MaxMeshlets = 16,
+      // VR terrain level of detail: landscape meshlets never span a tile of
+      // LodTile cm (scene.glsl LodTileSize); SubMesh::lod LodBoundary marks the
+      // tile-boundary triangles, which every level shares unchanged.
+      LodTile     = 6000,
+      LodBoundary = 3,
+      };
+    // Vertex clustering cell of LOD levels 1 and 2 (cm); each divides LodTile so
+    // a cell never straddles a tile.
+    static constexpr float LodCell[2] = {300.f, 750.f};
+    static uint8_t lodLevelsDefault() {
+#if defined(__ANDROID__)
+      return 2;
+#else
+      return 0;
+#endif
+      }
+
+    enum PkgType {
+      PK_Visual,
+      PK_VisualLnd,
+      PK_VisualMorph,
+      PK_Physic,
+      };
+
+    struct SubMesh final {
+      zenkit::Material material;
+      size_t           iboOffset = 0;
+      size_t           iboLength = 0;
+      uint8_t          lod       = 0; // 0 full detail, 1-2 clustered levels, LodBoundary shared boundary triangles
+      };
+
+    struct Cluster final {
+      Tempest::Vec3 pos;
+      float         r = 0;
+      };
+
+    enum BVH_NodeType : uint32_t {
+      BVH_NullNode = 0x00000000,
+      BVH_BoxNode  = 0x10000000,
+      BVH_Tri1Node = 0x20000000,
+      BVH_Tri2Node = 0x30000000,
+      };
+
+    struct BVHNode {
+      // Alternative 64-byte BVH node layout, which specifies the bounds of
+      // the children rather than the node itself. This layout is used by
+      // Aila and Laine in their seminal GPU ray tracing paper.
+      Tempest::Vec3 lmin; uint32_t left;
+      Tempest::Vec3 lmax; uint32_t right;
+      Tempest::Vec3 rmin; uint32_t padd0;
+      Tempest::Vec3 rmax; uint32_t padd1;
+      };
+
+    struct Leaf64 {
+      Tempest::Vec3 bbmin; uint32_t ptr;
+      Tempest::Vec3 bbmax; uint32_t padd0;
+      };
+    using UVec4 = Tempest::BasicPoint<uint32_t,4>;
+
+    std::vector<Vertex>   vertices;
+    std::vector<VertexA>  verticesA;
+    std::vector<uint32_t> indices;
+    std::vector<uint8_t>  indices8;
+
+    std::vector<SubMesh>  subMeshes;
+    std::vector<Cluster>  meshletBounds;
+
+    std::vector<uint32_t> verticesId; // only for morph meshes
+    bool                  isUsingAlphaTest = true;
+    // VR: luminance of a fully lit vertex of the Spacer bake (ambient + sun of the fit), 0 = no bake (vr/vrbakedlight.h).
+    float                 bakedLit = 0;
+
+    // sw-raytracing
+    std::vector<BVHNode>  bvhNodes;
+    std::vector<UVec4>    bvh8Nodes;
+
+    PackedMesh(const zenkit::MultiResolutionMesh& mesh, PkgType type);
+    PackedMesh(const zenkit::Mesh& mesh, PkgType type, uint8_t lodLevels = 0);
+    PackedMesh(const zenkit::SoftSkinMesh& mesh);
+
+    void debug(std::ostream &out) const;
+
+    std::pair<Tempest::Vec3,Tempest::Vec3> bbox() const;
+
+  private:
+    Tempest::Vec3 mBbox[2];
+
+    struct Prim {
+      uint32_t primId   = 0;
+      uint32_t mat      = 0;
+      uint64_t tile     = 0; // landscape LOD tile key (first vertex)
+      uint8_t  boundary = 0; // vertices span several tiles
+      };
+
+    struct SkeletalData {
+      Tempest::Vec3 localPositions[4] = {};
+      uint8_t       boneIndices[4]    = {};
+      float         weights[4]        = {};
+      };
+
+    using  Vert = std::pair<uint32_t,uint32_t>;
+    struct PrimitiveHeap;
+    struct Meshlet {
+      Vert          vert   [MaxVert] = {};
+      uint8_t       indexes[MaxInd ] = {};
+      uint8_t       vertSz           = 0;
+      uint8_t       indSz            = 0;
+      Cluster       bounds;
+
+      void    flush(std::vector<Vertex>& vertices,
+                    std::vector<uint32_t>& indices, std::vector<uint8_t>& indices8,
+                    std::vector<Cluster>& instances, const zenkit::Mesh& mesh,
+                    const std::vector<uint32_t>* bakedColor = nullptr);
+
+      void    flush(std::vector<Vertex>& vertices, std::vector<VertexA>& verticesA,
+                    std::vector<uint32_t>& indices, std::vector<uint8_t>& indices8,
+                    std::vector<uint32_t>* verticesId, const std::vector<zenkit::Vec3>& vbo,
+                    const std::vector<zenkit::MeshWedge>& wedgeList,
+                    const std::vector<SkeletalData>* skeletal);
+      bool    validate() const;
+
+      bool    insert(const Vert& a, const Vert& b, const Vert& c);
+      void    clear();
+      void    updateBounds(const zenkit::Mesh& mesh);
+      void    updateBounds(const zenkit::MultiResolutionMesh& mesh);
+      void    updateBounds(const std::vector<zenkit::Vec3>& vbo);
+      bool    canMerge(const Meshlet& other) const;
+      bool    hasIntersection(const Meshlet& other) const;
+      float   qDistance(const Meshlet& other) const;
+      void    merge(const Meshlet& other);
+      };
+
+    struct HalfEdge {
+      float         sah  = 0;
+      uint32_t      iMax = 0;
+      uint32_t      iMin = 0;
+      uint32_t      prim = 0;
+      bool          wnd  = false;
+      };
+
+    struct Fragment {
+      Tempest::Vec3 centroid;
+      Tempest::Vec3 bbmin, bbmax;
+
+      uint32_t      ibo[4] = {};
+      uint32_t      prim0 = 0;
+      uint32_t      prim1 = 0xFFFFFFFF;
+      };
+
+    struct Block {
+      Tempest::Vec3 bbmin;
+      Tempest::Vec3 bbmax;
+      Fragment*     frag = nullptr;
+      size_t        size = 0;
+      };
+
+    struct CWBVH8 {
+      float    p[3];
+      uint8_t  e[3], imask;
+
+      uint32_t pNodes      = 0;
+      uint32_t pPrimitives = 0;
+      uint8_t  meta  [8]   = {};
+
+      uint8_t  qmin_x[8] = {};
+      uint8_t  qmax_x[8] = {};
+      uint8_t  qmin_y[8] = {};
+      uint8_t  qmax_y[8] = {};
+      uint8_t  qmin_z[8] = {};
+      uint8_t  qmax_z[8] = {};
+      };
+    static_assert(sizeof(CWBVH8)==80);
+
+    bool   addTriangle(Meshlet& dest, const zenkit::Mesh* mesh, const zenkit::SubMesh* proto_mesh, size_t id);
+
+    void   packPhysics(const zenkit::Mesh& mesh, PkgType type);
+
+    // bvh common
+    static void quadAddPrim(Fragment& f, const zenkit::Mesh& shp, uint32_t prim0, uint32_t prim1, uint32_t iMin, uint32_t iMax);
+    static auto packQuads(const zenkit::Mesh& mesh) -> std::vector<PackedMesh::Fragment>;
+
+    static auto findNodeSplit(const Fragment* frag, size_t size, const bool useSah) -> std::pair<uint32_t, float>;
+    static auto findNodeSplitSah(Fragment* frag, size_t size) -> std::pair<uint32_t, bool>;
+    static void packBlocks(Block* out, uint32_t& outSz, uint8_t destSz, Fragment* frag, size_t size);
+    static void computeBbox(Tempest::Vec3& bbmin, Tempest::Vec3& bbmax, const Fragment* frag, size_t size);
+    void        packBVH(const zenkit::Mesh& mesh);
+
+    // bvh2
+    void     packBVH2(const zenkit::Mesh& mesh);
+    uint32_t packBVH2(const zenkit::Mesh& mesh, std::vector<BVHNode>& nodes, Fragment* frag, size_t size, size_t parentSz);
+
+    // cwbvh8
+    void     packCWBVH8(const zenkit::Mesh& mesh);
+    CWBVH8   packCWBVH8(const zenkit::Mesh& mesh, std::vector<UVec4>& nodes, Fragment* frag, size_t size);
+
+    CWBVH8   packCWBVH8(const zenkit::Mesh& mesh, std::vector<UVec4>& nodes,
+                        const std::vector<uint32_t>& ibo, Fragment* frag, size_t size);
+    void     packCW8Blocks(Block* out, uint32_t& outSz, const zenkit::Mesh& mesh, std::vector<UVec4>& nodes,
+                           Fragment* frag, size_t size, uint8_t depth);
+    CWBVH8   nodeFromBlocks(Block* block);
+    void     orderBlocks(Block* block, const uint32_t numBlocks, const Tempest::Vec3 bbmin, const Tempest::Vec3 bbmax);
+
+    //
+    void   packMeshletsLnd(const zenkit::Mesh& mesh, uint8_t lodLevels);
+    // Baked sun visibility per vertex feature of the landscape mesh being
+    // packed (vr/vrbakedlight.h); stored in the vertex colour alpha.
+    // 0xAARRGGBB: sun visibility in A, the Spacer bake colour in RGB; 0xFFFFFFFF = no bake.
+    std::vector<uint32_t> lndBakedColor;
+    Vr::BakedFit          lndBakedFit;   // fit of the base mesh, reused by the LOD levels (their averaged vertices fit badly on their own)
+    void   computeLndBakedVis(const zenkit::Mesh& mesh);
+    void   packLndRange(const zenkit::Mesh& mesh, const Prim* first, const Prim* last, uint32_t mId, uint8_t lod,
+                        PrimitiveHeap& heap, std::vector<bool>& used);
+    void   buildLndLod(const zenkit::Mesh& mesh, const std::vector<Prim>& prim, float cell,
+                       zenkit::Mesh& out, std::vector<Prim>& outPrim);
+    void   packMeshletsObj(const zenkit::MultiResolutionMesh& mesh, PkgType type,
+                           const std::vector<SkeletalData>* skeletal);
+
+    std::vector<Meshlet> buildMeshlets(const zenkit::Mesh* mesh, const zenkit::SubMesh* proto_mesh,
+                                       PrimitiveHeap& heap, std::vector<bool>& used);
+
+    void   computeBbox();
+
+    void   dbgUtilization(const std::vector<Meshlet>& meshlets);
+    void   dbgMeshlets(const zenkit::Mesh& mesh, const std::vector<Meshlet*>& meshlets);
+  };
+

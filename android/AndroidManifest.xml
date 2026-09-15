@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:required="true" android:version="0x00401000" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:required="true" android:version="1" />
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
+    <application android:allowBackup="false" android:appCategory="game"
+        android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false"
+        android:hasCode="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <!-- Quest 3: trade one CPU level for GPU level 5 (user-approved 2026-09-14; the CPU is mostly idle).
+             Build-time only: a new APK is needed to change it. -->
+        <meta-data android:name="com.oculus.trade_cpu_for_gpu_amount" android:value="1" />
+        <activity android:name="org.opengothic.app.SetupActivity" android:theme="@style/Theme.OpenGothic.Setup"
+            android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="user">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+        <activity android:name="org.tempest.TempestNativeActivity" android:exported="true"
+            android:launchMode="singleTask" android:screenOrientation="landscape" android:resizeableActivity="false"
+            android:configChanges="colorMode|density|fontScale|fontWeightAdjustment|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
+            android:windowSoftInputMode="adjustNothing" tools:ignore="DiscouragedApi">
+            <meta-data android:name="android.app.lib_name" android:value="opengothic" />
+            <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

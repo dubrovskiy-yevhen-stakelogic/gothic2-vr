@@ -1,0 +1,17 @@
+#version 450
+layout(local_size_x=1) in;
+layout(binding=0,std430) buffer Commands { uint values[]; } commands;
+layout(binding=1,std430) buffer Count { uint values[]; } countBuffer;
+layout(push_constant) uniform Push { uint count; } push;
+void main() {
+  // Nonzero command offset 16, stride 32. The third command must never execute.
+  for(uint i=0;i<3;++i) {
+    uint base=4+i*8;
+    commands.values[base+0]=6;
+    commands.values[base+1]=1;
+    commands.values[base+2]=3;
+    commands.values[base+3]=5;
+    commands.values[base+4]=7+i;
+  }
+  countBuffer.values[1]=push.count;
+}

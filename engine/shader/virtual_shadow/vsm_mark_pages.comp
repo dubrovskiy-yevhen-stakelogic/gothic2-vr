@@ -1,0 +1,217 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+// #extension GL_KHR_memory_scope_semantics : enable
+
+#define LWC 1
+
+#include "virtual_shadow/vsm_common.glsl"
+#include "lighting/tonemapping.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+//layout(local_size_x = 8, local_size_y = 8) in;
+layout(local_size_x = 16, local_size_y = 8) in;
+
+const uint NumThreads = gl_WorkGroupSize.x*gl_WorkGroupSize.y*gl_WorkGroupSize.z;
+
+layout(std140, push_constant) uniform Push {
+  float vsmMipBias;
+  };
+layout(binding  = 0, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+layout(binding = 1)        uniform texture2D  gbufDiffuse;
+layout(binding = 2)        uniform utexture2D gbufNormal;
+layout(binding = 3)        uniform texture2D  depth;
+layout(binding = 4, r32ui) uniform uimage3D   pageTbl;
+layout(binding = 5, r32ui) uniform uimage3D   pageTblDepth;
+
+ivec2 fragCoord = ivec2(gl_GlobalInvocationID.xy);
+
+void storeHiZValue(uint v) {
+  uvec4 dx = unpack565_16(v);
+  ivec3 at = ivec3(dx.xyz);
+  //uint  iz = floatBitsToUint(dx.w/float(0xFFFF));
+  uint  iz = (dx.w << 16);
+
+  //NOTE: require vulkan memory-model extension or vulkan 1.2
+  //imageAtomicStore(pageTbl, at, 1u, gl_ScopeDevice, gl_StorageSemanticsNone, gl_SemanticsRelaxed);
+  //imageStore(pageTbl, at, uvec4(1u));
+  imageAtomicExchange(pageTbl, at, 1u);
+  imageAtomicMin(pageTblDepth, at, iz);
+  }
+
+#if 0
+shared uint pageHiZ[6];
+void setupHiZ() {
+  const uint lane = gl_LocalInvocationIndex;
+  if(lane < pageHiZ.length())
+    pageHiZ[lane] = 0xFFFFFFFF;
+  }
+
+void markPage(ivec3 at, float z) {
+  if(z<0 || z>=1)
+    return;
+  //imageAtomicStore(pageTbl, at, 1u, gl_ScopeDevice, gl_StorageSemanticsNone, gl_SemanticsRelaxed);
+  //return;
+
+  uint iz  = uint(z*0xFFFF);
+  uint cur = pack565_16(at,iz);
+  for(uint i=0; i<pageHiZ.length(); ++i) {
+    uint v = atomicMin(pageHiZ[i], cur);
+    if(v==0xFFFFFFFF || (v&0xFFFF0000)==(cur&0xFFFF0000))
+      return;
+    cur = (v > cur) ? v : cur;
+    }
+  // imageAtomicAdd(pageTbl, ivec3(0), 1u); //counter
+  storeHiZValue(cur);
+  }
+
+void flushHiZ() {
+  const uint lane = gl_LocalInvocationIndex;
+  if(lane >= pageHiZ.length())
+    return;
+  const uint v = pageHiZ[lane];
+  if(v==0xFFFFFFFF)
+    return;
+  storeHiZValue(v);
+  }
+#else
+shared uint pageHiZ[NumThreads];
+void setupHiZ() {
+  const uint lane = gl_LocalInvocationIndex;
+  pageHiZ[lane] = 0xFFFFFFFF;
+  }
+
+void markPage(ivec3 at, float z) {
+#if VSM_ENABLE_SUN
+  if(z<0 || z>=1)
+    return;
+
+  uint iz  = floatBitsToUint(z) >> 16;
+  uint cur = pack565_16(at,iz);
+  uint id  = pageIdHash7(at) % pageHiZ.length();
+
+  uint v   = atomicMin(pageHiZ[id], cur);
+  if(v==0xFFFFFFFF)
+    return; // clean insert
+  if((v&0xFFFF0000)==(cur&0xFFFF0000))
+    return; // update same entry
+
+  // imageAtomicAdd(pageTbl, ivec3(0), 1u); //counter
+  storeHiZValue(v);
+#endif
+  }
+
+void flushHiZ() {
+  const uint lane = gl_LocalInvocationIndex;
+  const uint v    = pageHiZ[lane];
+  if(v==0xFFFFFFFF)
+    return;
+  storeHiZValue(v);
+  }
+#endif
+
+float lambert(vec3 normal) {
+  return max(0.0, dot(scene.sunDir,normal));
+  }
+
+int shadowLod(vec2 dx, vec2 dy) {
+  float px     = dot(dx, dx);
+  float py     = dot(dy, dy);
+  float maxLod = 0.5 * log2(max(px, py)); // log2(sqrt()) = 0.5*log2()
+  float minLod = 0.5 * log2(min(px, py));
+
+  const float bias = vsmMipBias;
+  //return max(0, int((minLod + maxLod)*0.5 + bias + 0.5));
+  return max(0, int(minLod + bias));
+  }
+
+vec4 worldPos(ivec2 frag, float depth) {
+  const vec2 fragCoord = ((frag.xy+0.5)*scene.screenResInv)*2.0 - vec2(1.0);
+  const vec4 scr       = vec4(fragCoord.x, fragCoord.y, depth, 1.0);
+  return scene.viewProjectLwcInv * scr;
+  }
+
+vec3 _shadowPos(float z, vec3 normal, ivec2 offset) {
+  const vec4  wpos = worldPos(ivec2(fragCoord.xy) + offset, z) + vec4(normal*0.002, 0);
+  vec4 shPos = scene.viewVirtualShadowLwc * wpos;
+  shPos.xyz /= shPos.w;
+  return shPos.xyz;
+  }
+
+bool planetOcclusion(float viewPos) {
+  const float y = RPlanet + max(viewPos*0.1, 0);
+  if(rayIntersect(vec3(0,y,0), scene.sunDir, RPlanet)>0)
+    return true;
+  return false;
+  }
+
+vec3 shadowPos(vec4 wpos, vec4 offset) {
+  vec4 shPos = scene.viewVirtualShadowLwc * wpos + offset;
+  shPos.xyz /= shPos.w;
+  return shPos.xyz;
+  }
+
+bool calcMipIndex(out vec3 pagePos, out int mip, const float z, const vec3 normal) {
+  const vec4 wpos = worldPos(ivec2(fragCoord.xy), z) + vec4(normal*0.002, 0);
+  if(planetOcclusion(wpos.y/wpos.w))
+    return false;
+
+  vec3 shPos0 = shadowPos(wpos, vec4(0));
+  vec2 shPos1 = shadowPos(wpos, scene.vsmDdx).xy;
+  vec2 shPos2 = shadowPos(wpos, scene.vsmDdy).xy;
+
+  mip   = shadowLod((shPos1 - shPos0.xy)*VSM_CLIPMAP_SIZE,
+                    (shPos2 - shPos0.xy)*VSM_CLIPMAP_SIZE);
+  mip   = vsmCalcMipIndex(shPos0.xy, mip);
+
+  pagePos = vec3(shPos0.xy / (1 << mip), shPos0.z);
+
+  return mip<VSM_PAGE_MIPS;
+  }
+
+void realMain() {
+  const ivec2 size = textureSize(depth, 0);
+  if(any(greaterThanEqual(fragCoord, size)))
+    return;
+
+  const float z = texelFetch(depth, fragCoord, 0).x;
+  if(z==1)
+    return;
+
+  const vec4  diff   = texelFetch (gbufDiffuse, fragCoord, 0);
+  const vec3  normal = normalFetch(gbufNormal,  fragCoord);
+
+  bool isFlat  = false;
+  bool isATest = false;
+  bool isWater = false;
+  decodeBits(diff.a, isFlat, isATest, isWater);
+
+  const float light = (isFlat ? 0 : lambert(normal));
+  if(light<=0)
+    return;
+
+  vec3 page = vec3(0);
+  int  mip  = 0;
+  if(!calcMipIndex(page, mip, z, normal))
+    return;
+
+  //if(mip>6)
+  //  return;
+  ivec2 pageI = ivec2((page.xy*0.5+0.5)*VSM_PAGE_TBL_SIZE);
+  markPage(ivec3(pageI, mip), page.z);
+  }
+
+void main() {
+  setupHiZ();
+  barrier();
+
+  realMain();
+  barrier();
+
+  flushHiZ();
+  }

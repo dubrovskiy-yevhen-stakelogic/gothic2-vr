@@ -1,0 +1,351 @@
+#version 460
+
+#define RAY_QUERY
+#define RAY_QUERY_AT
+
+#define SOFT_SHADOW
+// #define RESCALE
+#define LOCAL_LIGHTS
+
+#include "lighting/rt/rt_common.glsl"
+#include "lighting/pt/pathtrace_common.glsl"
+#include "lighting/lightstree/lights_common.glsl"
+#include "lighting/tonemapping.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+const vec3  groundAlbedo = vec3(0.3f); // testing
+
+layout(location = 0) in  vec2 inUV;
+layout(location = 0) out vec4 outColor;
+
+layout(std140, push_constant) uniform Push {
+  uint frameId;
+  };
+layout(binding = 0, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+layout(binding = 2) uniform texture2D irradiance;
+layout(binding = 3) uniform sampler2D skyLUT;
+layout(binding = 4) uniform sampler2D textureSm1;
+layout(binding = 5, std430) readonly buffer BVH {
+  PTreeNode node[];
+  } bvhData;
+
+vec3 skyIrradiance(vec3 n) {
+  ivec3 d;
+  d.x = n.x>=0 ? 1 : 0;
+  d.y = n.y>=0 ? 1 : 0;
+  d.z = n.z>=0 ? 1 : 0;
+
+  n = n*n;
+
+  vec3 ret = vec3(0);
+  ret += texelFetch(irradiance, ivec2(0,d.x), 0).rgb * n.x;
+  ret += texelFetch(irradiance, ivec2(1,d.y), 0).rgb * n.y;
+  ret += texelFetch(irradiance, ivec2(2,d.z), 0).rgb * n.z;
+
+  return ret;
+  }
+
+float shadowSample(in sampler2D shadowMap, vec2 shPos) {
+  shPos.xy = shPos.xy*vec2(0.5,0.5)+vec2(0.5);
+  return textureLod(shadowMap,shPos,0).r;
+  }
+
+float calcShadow(vec3 shPos1) {
+  float sh1 = shadowSample(textureSm1,shPos1.xy);
+  float v1  = (sh1 < shPos1.z) ? 1.0 : 0.0;
+  return v1;
+  }
+
+float shadowFactor(vec3 pos) {
+  vec4 shPos = scene.viewShadow[1]*vec4(pos,1);
+  if(abs(shPos.x)>=shPos.w && abs(shPos.y)>=shPos.w)
+    return 1;
+  return calcShadow(shPos.xyz/shPos.w);
+  }
+
+
+vec3 randomizeRay(vec3 ray, float off, inout Random rngState) {
+#if !defined(SOFT_SHADOW)
+  return ray;
+#else
+  // https://www.shadertoy.com/view/3sfBWs
+  const vec2 blueNoiseInDisk[64] = vec2[64](
+      vec2(0.478712,0.875764),
+      vec2(-0.337956,-0.793959),
+      vec2(-0.955259,-0.028164),
+      vec2(0.864527,0.325689),
+      vec2(0.209342,-0.395657),
+      vec2(-0.106779,0.672585),
+      vec2(0.156213,0.235113),
+      vec2(-0.413644,-0.082856),
+      vec2(-0.415667,0.323909),
+      vec2(0.141896,-0.939980),
+      vec2(0.954932,-0.182516),
+      vec2(-0.766184,0.410799),
+      vec2(-0.434912,-0.458845),
+      vec2(0.415242,-0.078724),
+      vec2(0.728335,-0.491777),
+      vec2(-0.058086,-0.066401),
+      vec2(0.202990,0.686837),
+      vec2(-0.808362,-0.556402),
+      vec2(0.507386,-0.640839),
+      vec2(-0.723494,-0.229240),
+      vec2(0.489740,0.317826),
+      vec2(-0.622663,0.765301),
+      vec2(-0.010640,0.929347),
+      vec2(0.663146,0.647618),
+      vec2(-0.096674,-0.413835),
+      vec2(0.525945,-0.321063),
+      vec2(-0.122533,0.366019),
+      vec2(0.195235,-0.687983),
+      vec2(-0.563203,0.098748),
+      vec2(0.418563,0.561335),
+      vec2(-0.378595,0.800367),
+      vec2(0.826922,0.001024),
+      vec2(-0.085372,-0.766651),
+      vec2(-0.921920,0.183673),
+      vec2(-0.590008,-0.721799),
+      vec2(0.167751,-0.164393),
+      vec2(0.032961,-0.562530),
+      vec2(0.632900,-0.107059),
+      vec2(-0.464080,0.569669),
+      vec2(-0.173676,-0.958758),
+      vec2(-0.242648,-0.234303),
+      vec2(-0.275362,0.157163),
+      vec2(0.382295,-0.795131),
+      vec2(0.562955,0.115562),
+      vec2(0.190586,0.470121),
+      vec2(0.770764,-0.297576),
+      vec2(0.237281,0.931050),
+      vec2(-0.666642,-0.455871),
+      vec2(-0.905649,-0.298379),
+      vec2(0.339520,0.157829),
+      vec2(0.701438,-0.704100),
+      vec2(-0.062758,0.160346),
+      vec2(-0.220674,0.957141),
+      vec2(0.642692,0.432706),
+      vec2(-0.773390,-0.015272),
+      vec2(-0.671467,0.246880),
+      vec2(0.158051,0.062859),
+      vec2(0.806009,0.527232),
+      vec2(-0.057620,-0.247071),
+      vec2(0.333436,-0.516710),
+      vec2(-0.550658,-0.315773),
+      vec2(-0.652078,0.589846),
+      vec2(0.008818,0.530556),
+      vec2(-0.210004,0.519896)
+      );
+
+  // get a blue noise sample position
+  vec2 samplePos = blueNoiseInDisk[wangHash(rngState.state)%blueNoiseInDisk.length()];
+  samplePos *= off; //tan(angle);
+
+  vec3  r  = normalize(vec3(0,0,1) + vec3(samplePos,0));
+
+  vec3  uu = normalize( cross( ray, vec3(0.0,1.0,1.0) ) );
+  vec3  vv = normalize( cross( uu, ray ) );
+
+  return vec3( r.x*uu + r.y*vv + r.z*ray );
+#endif
+  }
+
+float sampleDirectLight(vec3 norm, vec3 rayOrigin, vec3 rayDirection, bool shadowed, float softAngle, inout Random rngState) {
+  vec3  shRay = randomizeRay(rayDirection, tan(0.5*M_PI/180.0), rngState);
+  float lamb  = max(dot(norm, rayDirection), 0);
+  if(!shadowed || lamb==0)
+    return lamb;
+
+  float shadow = rayQueryProceedShadow(rayOrigin, shRay, rngState);
+  // float shadow = shadowFactor(rayOrigin);
+  return (lamb * shadow);
+  }
+
+float samplePointLight(vec3 norm, vec3 rayOrigin, vec3 lightPos, float range, bool shadowed, float softAngle, inout Random rngState) {
+  const vec3    ldir         = lightPos - rayOrigin;
+  const float   dirLength    = length(ldir);
+  const vec3    rayDirection = ldir/dirLength;
+  const vec3    shRay        = randomizeRay(rayDirection, 0.0375, rngState);
+
+  const float   intensity    = lightIntensity(norm, dirLength, -shRay, range);
+  if(!shadowed || intensity<=0)
+    return 0;
+
+  float rayDistance = dirLength - range*0.0375; //NOTE: padding of ~3%, in case if light inside wall
+  if(rayDistance<=0)
+    return intensity;
+
+  float shadow = rayQueryProceedShadow(rayOrigin, shRay, rayDistance, rngState);
+  return (intensity * shadow);
+  }
+
+vec3 sampleLocalLight(vec3 norm, vec3 rayOrigin, inout Random rngState) {
+  float pdf  = 1.0;
+  float key  = randf(rngState);
+  uint  node = 0 | BVH_BoxNode;
+
+  while(true) {
+    const uint type = bvhGetNodeType(node);
+    if(type==BVH_LightNode) {
+      // light
+      break;
+      }
+    if(type!=BVH_BoxNode) {
+      // something else
+      return vec3(0);
+      }
+
+    const PTreeNode n      = bvhData.node[node & 0x0FFFFFFF];
+    const float     wLeft  = bvhLightsNodeWeight(rayOrigin, norm, n.centerL, n.weightL);
+    const float     wRight = bvhLightsNodeWeight(rayOrigin, norm, n.centerR, n.weightR);
+    const float     pLeft  = wLeft /(wLeft + wRight);
+    const float     pRight = wRight/(wLeft + wRight);
+    if(key < pLeft) {
+      pdf *= pLeft;
+      node = n.ptrL;
+      key = key/pLeft;
+      } else {
+      pdf *= pRight;
+      node = n.ptrR;
+      key = (key-pLeft)/pRight;
+      }
+    }
+
+  // light
+  PTreeNode n         = bvhData.node[node & 0x0FFFFFFF];
+  vec3      color     = n.centerR;
+  float     intensity = samplePointLight(norm, rayOrigin, n.centerL, n.weightR, true, 0, rngState);
+  if(pdf < 0.001)
+    return vec3(0); // numerically unstable + fireflys
+  return (intensity * color) / pdf;
+  }
+
+vec4 pathtrace(vec3 rayOrigin, vec3 rayDirection) {
+  const int numBounces = 5;
+
+  Random rngState   = srand(uvec2(gl_FragCoord.xy), scene.tickCount32);
+  vec3   thruput    = vec3(1);
+  vec3   color      = vec3(0);
+  bool   underWater = (scene.underWater!=0);
+  float  depth      = 0;
+
+  for(int bounce=0;; ++bounce) {
+    if(dot(thruput*scene.GSunIntensity*scene.exposure, vec3(0.2126, 0.7152, 0.0722)) < 0.01)
+      break;
+
+    if(bounce>=numBounces) {
+      // return 0.5*vec4(1,0,1,depth)*scene.GSunIntensity;
+#if defined(RESCALE)
+      // rescale to 100% thruput
+      vec3 scale = 1.0-thruput;
+      if(scale.r>0.01 && scale.g>0.01 && scale.b>0.01)
+        return vec4(color/scale, depth);
+#endif
+      return vec4(color, depth);
+      }
+
+    HitResolve hit = rayQueryProceedPrimary(rayOrigin, rayDirection, (bounce==0 ? 0 : -1), rngState);
+    if(bounce==0)
+      depth = abs(hit.rayT);
+
+    if(hit.rayT<0) {
+      hit.rayT = abs(hit.rayT); // backfaces are fine for PT
+      hit.norm = -hit.norm;
+      }
+
+    if(hit.rayT==TMax) {
+      vec3 sky = textureSkyLUT(skyLUT, vec3(0,RPlanet+max(rayOrigin.y*0.01,0),0), rayDirection, scene.sunDir) * scene.GSunIntensity;
+      color += thruput*sky;
+      color += thruput*(vec3(0.3, 0.26, 1)*0.15); //HACK for the night sky
+      break;
+      }
+
+    if(underWater) {
+      thruput *= waterTransmittance(hit.rayT);
+      }
+
+    if(hit.water) {
+      const float ior  = (underWater ? IorAir : IorWater);
+      const vec3  refl = reflect(rayDirection, hit.norm);
+      const float f    = fresnel(refl,hit.norm,ior);
+      const bool  path = (f>randf(rngState));
+
+      rayOrigin    = (rayOrigin + rayDirection * hit.rayT);
+      rayDirection = path ? refl : refract(rayDirection, hit.norm, ior);
+      underWater   = path ? underWater : !underWater;
+      thruput    *= WaterAlbedo;
+      continue;
+      }
+
+    rayOrigin    = (rayOrigin + rayDirection * hit.rayT);
+    rayDirection = randCosWeightedHemisphereDirection(hit.norm, rngState);
+    vec3 albedo  = textureAlbedo(hit.diff.rgb);
+    if(bounce>0)
+      albedo = min(albedo, 0.95);
+    thruput     *= albedo;
+    //thruput    *= vec3(0.85); //snow
+    //thruput    *= vec3(0.04); // asphalt
+    //if(bounce>0)
+    //  thruput *= groundAlbedo;
+    //if(bounce>0)
+    //  thruput    *= textureAlbedo(hit.diff.rgb);
+
+    vec3  direct = vec3(0);
+    direct += sampleDirectLight(hit.norm, rayOrigin, scene.sunDir, true, 0.54*M_PI/180.0, rngState) * scene.sunColor;
+    //direct += sampleDirectLight(hit.norm, rayOrigin, normalize(vec3(-1,1,0)), false, 0.56*M_PI/180.0, rngState) * (vec3(0.3, 0.26, 1)*GMoonIntensity);
+#if defined(LOCAL_LIGHTS)
+    direct += sampleLocalLight(hit.norm, rayOrigin, rngState) * (max(1.0, scene.exposure) / scene.exposure);
+#endif
+
+    //if(bounce==0)
+      color += thruput*direct*Fd_Lambert;
+
+    if(bounce==0)
+      ;//color += thruput*(hit.norm.y*0.25+0.75) * NightAmbient;
+    }
+
+  return vec4(color, depth);
+  }
+
+float nonLinearDepth(float d, vec3 clipInfo) {
+  float near = 10.f;
+  float far  = 100000.f;
+  // return clipInfo[0]/(d*clipInfo[1]) - clipInfo[2]/clipInfo[1];
+  if(d <= near)
+    return 0.0;
+  return (far / (far - near)) * (1.0 - (near / d));
+  }
+
+// halton low discrepancy sequence, from https://www.shadertoy.com/view/wdXSW8
+vec2 halton(uint index) {
+  const vec2 coprimes = vec2(2.0f, 3.0f);
+  vec2 s = vec2(index, index);
+  vec4 a = vec4(1,1,0,0);
+  while(s.x > 0.0 && s.y > 0.0) {
+    a.xy  = a.xy/coprimes;
+    a.zw += a.xy*mod(s, coprimes);
+    s = floor(s/coprimes);
+    }
+  return a.zw;
+  }
+
+void main() {
+  const vec2 subpixel = (halton(srand(uvec2(gl_FragCoord.xy),frameId).state)-0.5) * scene.screenResInv;
+
+  const mat4 inv = scene.viewProjectInv;
+  const vec2 uv  = inUV + subpixel;
+  const vec4 s   = inv*vec4(uv * 2.0 - 1.0, 0.0, 1);
+  const vec4 e   = inv*vec4(uv * 2.0 - 1.0, 1.0, 1);
+
+  const vec3 origin = s.xyz/s.w;
+  const vec3 dir    = normalize(e.xyz/e.w - origin);
+
+  const vec4 pt = pathtrace(origin, dir);
+  if(pt.a==0)
+    discard;
+
+  outColor = vec4(pt.rgb * scene.exposure, 1.0/(frameId+1.0));
+  gl_FragDepth = nonLinearDepth(pt.a, scene.clipInfo);
+  }

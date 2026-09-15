@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "description": "Explicit non-game resources and Gradle bootstrap; provenance in THIRD_PARTY_NOTICES.md",
+  "files": [
+    {
+      "path": "android/assets/vrhands/BigHandLeft.uxrh",
+      "sha256": "6bb32e6f79ed6dba401bd36dd39d3178f8259096f889ef01c870d057134eb535"
+    },
+    {
+      "path": "android/assets/vrhands/BigHandRight.uxrh",
+      "sha256": "48b14a77efea68027f5ae6723994cadc06dac58708ecb7339cc16ecb1ade2478"
+    },
+    {
+      "path": "android/assets/vrhands/BigHandsAlbedo.png",
+      "sha256": "44d2df3fb67fa65aaa448f2a8847809d0a24e8400445d2720759fca4232a3d9a"
+    },
+    {
+      "path": "engine/lib/Tempest/Engine/fonts/Roboto-Bold.ttf",
+      "sha256": "39a2f9d2c6a99fb8de9bf674373c4082cde84253311808ca80db6582266962ef"
+    },
+    {
+      "path": "engine/lib/Tempest/Engine/fonts/Roboto-BoldItalic.ttf",
+      "sha256": "1ec63a6ba218dc3e0d6798db39ba013e78c2cfffde5b2c9c826a3de2ed9c1546"
+    },
+    {
+      "path": "engine/lib/Tempest/Engine/fonts/Roboto-Italic.ttf",
+      "sha256": "cdd2575cf20113161b945ca72ed3f5d0b2b8a5ff81cfe235b75b3a783be408b0"
+    },
+    {
+      "path": "engine/lib/Tempest/Engine/fonts/Roboto-Regular.ttf",
+      "sha256": "7277cfb805def6410f317129b8e1f78bdd47d1a4e24c233077d06e88a36e57ae"
+    },
+    {
+      "path": "engine/lib/Tempest/Engine/cmake/android/gradle/wrapper/gradle-wrapper.jar",
+      "sha256": "498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17"
+    },
+    {
+      "path": "engine/lib/Tempest/Engine/thirdparty/openal-soft/hrtf/Default HRTF.mhr",
+      "sha256": "0b2f09f4d9167dec4e977e7e1a8c78df17e87da06fb0871b9896fadaa473a440"
+    }
+  ]
+}

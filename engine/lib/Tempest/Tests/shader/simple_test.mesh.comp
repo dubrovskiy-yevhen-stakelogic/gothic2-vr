@@ -1,0 +1,155 @@
+/**
+  Expected output of mesh-shader -> compute codegen
+  for prototyping purpose only.
+*/
+
+#version 440
+
+layout(local_size_x = 1) in;
+const uint max_vertices = 3;
+const uint max_primitives = 1;
+//layout(triangles, max_vertices = 3, max_primitives = 1) out;
+
+struct te_MeshPerVertexNV
+{
+    vec4  te_Position;
+    float te_PointSize;
+    float te_ClipDistance[1];
+    float te_CullDistance[1];
+};
+const uint sizeof_te_MeshPerVertexNV = 7; // NOTE: in uint32 elements, not in bytes
+
+// Custom vertex output block
+//layout(location = 0) out PerVertexData {
+struct PerVertexData {
+  vec4 color;
+  };
+const uint sizeof_te_PerVertexData = 4;
+
+struct te_MeshDesc {
+  uint owner;
+  uint ptr;
+  uint size;
+  };
+
+shared te_MeshPerVertexNV te_MeshVerticesNV[max_vertices];
+shared PerVertexData v_out[max_vertices];
+shared uint te_PrimitiveIndicesNV[3];
+shared uint te_PrimitiveCountNV;
+
+// should be dispatch base Y parameter
+layout(std140, push_constant) uniform Push {
+  uint self;
+  };
+
+struct IndirectCmd {
+  uint    indexCount;
+  uint    instanceCount;
+  uint    firstIndex;    // prefix sum
+  int     vertexOffset;  // can be abused to offset into var_buffer
+  uint    firstInstance; // caps: should be zero
+  uint    vboOffset;
+  };
+
+// Injected interface block, should be at set=1
+layout(set = 0, binding = 10, std430) buffer EngineInternal0 {
+  IndirectCmd cmd[];
+  } indirect;
+
+layout(set = 0, binding = 11, std430) buffer EngineInternal1
+{
+  uint    varGrow;
+  uint    grow;
+  uint    dispatchY;
+  uint    dispatchZ;
+  uint    desc[];
+} mesh;
+
+layout(set = 0, binding = 12, std430) buffer EngineInternal2
+{
+  uint    heap[];
+} var;
+
+// User bindings
+layout(std430, binding = 0) readonly buffer Vbo { vec2 vertices[]; };
+const vec3 colors[3] = {vec3(1,0,0), vec3(0,1,0), vec3(0,0,1)};
+
+void original_main() {
+  // Vertices position
+  te_MeshVerticesNV[0].te_Position = vec4(vertices[0], 0, 1);
+  te_MeshVerticesNV[1].te_Position = vec4(vertices[1], 0, 1);
+  te_MeshVerticesNV[2].te_Position = vec4(vertices[2], 0, 1);
+
+  // Vertices color
+  v_out[0].color = vec4(colors[0], 1.0);
+  v_out[1].color = vec4(colors[1], 1.0);
+  v_out[2].color = vec4(colors[2], 1.0);
+
+  // Triangle indices
+  te_PrimitiveIndicesNV[0] = 0;
+  te_PrimitiveIndicesNV[1] = 1;
+  te_PrimitiveIndicesNV[2] = 2;
+
+  // Number of triangles
+  te_PrimitiveCountNV = 1;
+  }
+
+// Suppose to be similar to injected entry-point
+void main() {
+  original_main();
+  barrier();
+
+  if(te_PrimitiveCountNV==0)
+    return;
+
+  if(gl_LocalInvocationID.x!=0)
+    return;
+
+  const uint varSize = (sizeof_te_MeshPerVertexNV+sizeof_te_PerVertexData);
+  const uint indSize = te_PrimitiveCountNV*3;
+
+  // Max Vertex. Assume empty output
+  uint indMax = 0;
+  for(uint i=0; i<indSize; ++i) {
+    indMax = max(indMax, te_PrimitiveIndicesNV[i]);
+    }
+
+  // Fair counting of indices
+  uint maxVertex = indMax+1;
+  uint maxVar    = maxVertex*varSize;
+
+  atomicAdd(indirect.cmd[self].indexCount,    indSize);
+  atomicAdd(indirect.cmd[self].instanceCount, maxVar); // abuse: vbo size
+  uint heapDest  = atomicAdd(mesh.varGrow, indSize + maxVar);
+  uint meshDest  = atomicAdd(mesh.grow,    1)*3;
+
+  uint varDest   = heapDest + indSize;
+
+  // Writeout indexes
+  for(uint i=0; i<indSize; ++i) {
+    var.heap[heapDest+i] = te_PrimitiveIndicesNV[i];
+    }
+
+  // Writeout varying
+  for(uint i=0; i<maxVertex; ++i) {
+    uint at = varDest + i*varSize;
+    // gl_PerVertex
+    var.heap[at+ 0] = floatBitsToUint(te_MeshVerticesNV[i].te_Position.x);
+    var.heap[at+ 1] = floatBitsToUint(te_MeshVerticesNV[i].te_Position.y);
+    var.heap[at+ 2] = floatBitsToUint(te_MeshVerticesNV[i].te_Position.z);
+    var.heap[at+ 3] = floatBitsToUint(te_MeshVerticesNV[i].te_Position.w);
+    var.heap[at+ 4] = floatBitsToUint(te_MeshVerticesNV[i].te_PointSize);
+    var.heap[at+ 5] = floatBitsToUint(te_MeshVerticesNV[i].te_ClipDistance[0]);
+    var.heap[at+ 6] = floatBitsToUint(te_MeshVerticesNV[i].te_CullDistance[0]);
+    // User data
+    var.heap[at+ 7] = floatBitsToUint(v_out[i].color.x);
+    var.heap[at+ 8] = floatBitsToUint(v_out[i].color.y);
+    var.heap[at+ 9] = floatBitsToUint(v_out[i].color.z);
+    var.heap[at+10] = floatBitsToUint(v_out[i].color.w);
+    }
+
+  // Writeout meshlet descriptor
+  mesh.desc[meshDest+0] = self;     // owner
+  mesh.desc[meshDest+1] = heapDest; // ptr
+  mesh.desc[meshDest+2] = (varSize<<18u) | (maxVertex<<10u) | (indSize);
+  }

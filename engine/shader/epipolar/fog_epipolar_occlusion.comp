@@ -1,0 +1,105 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#include "virtual_shadow/vsm_common.glsl"
+#include "epipolar/epipolar_common.glsl"
+#include "sky/sky_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0, r32ui)  uniform uimage2D   result;
+layout(binding = 1)         uniform texture2D  rayData;
+layout(binding = 2, std140) uniform UboScene { SceneDesc scene; };
+layout(binding = 3, std430) readonly buffer Ep0 { Epipole epipole[]; };
+layout(binding = 4)         uniform texture2D  depth;
+
+uint  NumSamples   = textureSize(rayData,0).x;
+uint  NumSlices    = textureSize(rayData,0).y;
+ivec2 fragCoord    = ivec2(gl_GlobalInvocationID.xy);
+ivec2 viewportSize = textureSize(depth, 0);
+
+float interleavedGradientNoise() {
+  return interleavedGradientNoise(fragCoord.xy);
+  }
+
+vec3 project(mat4 m, vec3 pos) {
+  vec4 p = m*vec4(pos,1);
+  return p.xyz/p.w;
+  }
+
+vec3 screenToShadow(vec3 scr) {
+  const vec4 shPos = scene.viewProject2VirtualShadow * vec4(scr,1);
+  return shPos.xyz/shPos.w;
+  }
+
+vec3 wrldToShadow(vec3 pos) {
+  const vec4 shPos = scene.viewVirtualShadow*vec4(pos,1);
+  return shPos.xyz/shPos.w;
+  }
+
+void trace(const vec2 inPos, const float z, ivec2 pix, const uint sliceId) {
+  const int   steps  = 32;
+  const float noise  = interleavedGradientNoise()/steps;
+
+  const vec3 shPos0 = screenToShadow(vec3(inPos.xy,0));
+  const vec3 shPos1 = screenToShadow(vec3(inPos.xy,z));
+
+  const Epipole e      = epipole[sliceId];
+  const float   tMin   = e.tMin;
+  const float   tMax   = e.tMax;
+  const vec2    rayA   = e.rayOrig;
+  const vec2    rayDir = e.rayDir;
+
+  uint occlusion = 0;
+  [[dont_unroll]]
+  for(uint i=0; i<steps; ++i) {
+    float t      = (i+0.3)/float(steps);
+    vec3  shPos  = mix(shPos0, shPos1, t+noise);
+    //vec3  shPos  = shPos1;
+    float shV    = dot(shPos.xy - rayA, rayDir) / (tMax-tMin);
+
+    float sh     = texelFetch(rayData, ivec2(shV*NumSamples, sliceId), 0).x;
+    bool  shadow = (sh < shPos.z);
+
+    occlusion = occlusion | ((shadow ? 1u : 0u) << uint(i));
+    }
+
+  //imageStore(result, pix, vec4(bitCount(occlusion)/float(steps)));
+  imageStore(result, pix, uvec4(occlusion));
+  }
+
+void dbgEpipole(const vec2 inPos, float z) {
+  const vec2 sun    = sunPosition2d(scene);
+  const vec3 camPos = wrldToShadow(scene.camPos);
+  const vec3 shPos1 = screenToShadow(vec3(inPos, 1));
+
+  vec2 orig = camPos.xy;
+  vec2 dir  = shPos1.xy - orig;
+
+  float a     = (atan(dir.y, dir.x)/M_PI)*0.5 + 0.5;
+  int   slice = int(a*NumSlices);
+  //imageStore(result, fragCoord, vec4(debugColors[slice % debugColors.length()], 1));
+
+  if(length(sun-inPos)<0.01)
+    ;//imageStore(result, fragCoord, vec4(1));
+  }
+
+void main() {
+  if(any(greaterThanEqual(fragCoord, viewportSize)))
+    return;
+
+  const vec2  inPos = (vec2(fragCoord)/vec2(viewportSize))*2.0 - 1.0;
+  const float z     = min(texelFetch(depth, fragCoord, 0).x, dFogMax);
+  const uint  id    = sliceId(scene, fragCoord, viewportSize, NumSlices);
+  // dbgEpipole(inPos, z);
+  trace(inPos, z, fragCoord, id);
+
+  //debug
+  //imageStore(result, fragCoord, vec4(float(id)/float(NumSlices)));
+  }

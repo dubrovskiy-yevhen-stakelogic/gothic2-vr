@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="import_game_files"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/import_game_files">
+        <intent
+            android:action="@OPENGOTHIC_APPLICATION_ID@.IMPORT_GAME_FILES"
+            android:targetPackage="@OPENGOTHIC_APPLICATION_ID@"
+            android:targetClass="org.opengothic.app.SetupActivity" />
+    </shortcut>
+</shortcuts>

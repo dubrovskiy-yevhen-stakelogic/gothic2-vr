@@ -1,0 +1,70 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes:enable
+
+layout(local_size_x = 64) in;
+
+struct Descriptor
+{
+  uint drawId;
+  uint ptr;
+  uint indSz;
+};
+
+struct DrawIndexedIndirectCommand
+{
+  uint drawId;
+  uint indexCountSrc;
+  uint indexCount;
+  uint instanceCount;
+  uint firstIndex;    // prefix sum
+  int  vertexOffset;  // can be abused to offset into var_buffer
+  uint firstInstance; // caps: should be zero
+  uint lutPtr;
+};
+
+layout(binding = 0, std430) restrict buffer EngineInternal0
+{
+  DrawIndexedIndirectCommand indirect[];
+};
+
+layout(binding = 1, std430) restrict buffer EngineInternal1
+{
+  uint       taskletCnt;
+  uint       meshletCnt;
+  uint       grow;
+  Descriptor desc[];
+} mesh;
+
+layout(binding = 2, std430) restrict buffer EngineInternal2
+{
+  uint grow;
+  uint heap[];
+} var;
+
+layout(push_constant, std430) uniform UboPush {
+  uint indirectRate;
+  uint indirectCmdCount;
+  };
+
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if(index>=indirect.length())
+    return;
+  indirect[index].drawId        = index/indirectRate;
+  indirect[index].indexCountSrc = 0;
+  indirect[index].indexCount    = 0;
+  indirect[index].instanceCount = 0;
+  indirect[index].firstIndex    = 0;
+  indirect[index].vertexOffset  = 0;
+  indirect[index].firstInstance = 0;
+  indirect[index].lutPtr        = 0;
+
+  if(index==0) {
+    mesh.taskletCnt = 0;
+    mesh.meshletCnt = 0;
+    mesh.grow       = 0;
+
+    var.grow        = 0;
+    }
+  }

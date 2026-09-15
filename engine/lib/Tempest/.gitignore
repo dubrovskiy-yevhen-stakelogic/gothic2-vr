@@ -1,0 +1,48 @@
+# Prerequisites
+*.d
+
+*build-*-debug/
+*build-*-release/
+*build-*/
+*build/
+CMakeLists.txt.user*
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug
+dbg.png
+
+# QtCreator
+Engine/CMakeLists.txt.user
+Tests/tests/CMakeLists.txt.user
+Examples/out/*
+
+# MacOS
+.DS_Store

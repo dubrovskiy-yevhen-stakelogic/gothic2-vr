@@ -1,0 +1,72 @@
+#pragma once
+
+#include <cstdint>
+#include <zenkit/addon/daedalus.hh>
+#include <Tempest/Vec>
+
+class Npc;
+class GameScript;
+class Serialize;
+
+class FightAlgo final {
+  public:
+    FightAlgo();
+
+    void load(Serialize& fin);
+    void save(Serialize& fout);
+
+    enum Action : uint8_t {
+      MV_NULL     = 0,
+      MV_MOVEG    = 1,
+      MV_MOVE     = 2,
+      MV_JUMPBACK = 3,
+      MV_ATTACK   = 4,
+      MV_ATTACKL  = 5,
+      MV_ATTACKR  = 6,
+      MV_STRAFEL  = 7,
+      MV_STRAFER  = 8,
+      MV_BLOCK    = 9,
+      MV_WAIT     = 10,
+      MV_WAITLONG = 11,
+      MV_TURN2HIT = 12,
+      MV_TURN     = 13,
+      MV_TURNG    = 14,
+      MV_STRAFE_E = 15,
+
+      MV_MAX      = 6
+      };
+
+    Action nextFromQueue(Npc &npc, Npc &tg, GameScript& owner);
+    void   consumeAction();
+    void   onClearTarget();
+    void   onTakeHit();
+
+    bool   hasInstructions() const;
+    bool   fetchInstructions(Npc &npc, Npc &tg, GameScript& owner);
+    float  qDistTo(const Npc& npc, const Npc& tg) const;
+
+    float  baseDistance           (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    float  prefferedAttackDistance(const Npc &npc, const Npc &tg, GameScript &owner) const;
+    float  prefferedGDistance     (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    float  attackFinishDistance   (GameScript &owner) const;
+
+    bool   isInAttackRange        (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    bool   isInFinishRange        (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    bool   isInCloseupRange       (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    bool   isInWRange             (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    bool   isInGRange             (const Npc &npc, const Npc &tg, GameScript &owner) const;
+    bool   isInFocusAngle         (const Npc &npc, const Npc &tg) const;
+    bool   isInFocusAngle         (const Npc &npc, const Npc &tg, float ang) const;
+    bool   isInJumpBackAngle      (const Npc &npc, const Npc &tg) const;
+
+  private:
+    void   fillQueue(Npc &npc, Npc &tg, GameScript& owner);
+    bool   fillQueue(GameScript& owner, const zenkit::IFightAi& src);
+
+    static bool   angleTest(const Npc& npc, const Npc& tg, float cosMax);
+    static float  weaponRange(GameScript &owner,const Npc &npc);
+
+    zenkit::FightAiMove queueId = zenkit::FightAiMove::NOP;
+    Action              tr   [MV_MAX]={};
+    bool                hitFlg=false;
+  };

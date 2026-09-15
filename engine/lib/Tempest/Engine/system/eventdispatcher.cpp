@@ -1,0 +1,562 @@
+#include "eventdispatcher.h"
+
+#include <Tempest/Application>
+#include <Tempest/Shortcut>
+#include <Tempest/Platform>
+#include <Tempest/UiOverlay>
+
+using namespace Tempest;
+
+EventDispatcher::EventDispatcher() {
+  }
+
+EventDispatcher::EventDispatcher(Widget &root)
+  :customRoot(&root){
+  }
+
+void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
+  ++mouseEvCount;
+  const uint64_t prevEvCount = mouseEvCount;
+
+  MouseEvent e1( e.x,
+                 e.y,
+                 e.button,
+                 mkModifier(),
+                 e.delta,
+                 e.mouseID,
+                 Event::MouseDown );
+  e1.ignore();
+
+  auto& btn = mouseUp[mouseCaptureKey(e.mouseID,e.button)];
+  for(auto i:overlays) {
+    if(!i->bind(wnd))
+      continue;
+    btn = implDispatch(*i,e1);
+    if(e1.isAccepted())
+      break;
+    if(e1.type()==MouseEvent::MouseDown) {
+      mouseLast    = btn;
+      mouseLastBtn = e.button;
+      }
+    }
+
+  if(!e1.isAccepted())
+    btn = implDispatch(wnd,e1);
+
+  if(prevEvCount!=mouseEvCount) {
+    mouseLastTime = 0;
+    mouseLastBtn  = Event::MouseButton::ButtonNone;
+    btn.reset();
+    }
+  else if(e1.isAccepted() && e1.type()==MouseEvent::MouseDown) {
+    mouseLast     = btn;
+    mouseLastTime = Application::tickCount();
+    mouseLastBtn  = e.button;
+    }
+
+  if(auto w = btn.lock()) {
+    if(w->widget->focusPolicy() & ClickFocus) {
+      w->widget->implSetFocus(true,Event::FocusReason::ClickReason);
+      }
+    }
+  }
+
+void EventDispatcher::dispatchMouseUp(Widget& /*wnd*/, MouseEvent &e) {
+  ++mouseEvCount;
+
+  const auto key = mouseCaptureKey(e.mouseID,e.button);
+  auto       it  = mouseUp.find(key);
+  if(it==mouseUp.end())
+    return;
+  auto ptr = it->second;
+  mouseUp.erase(it);
+
+  if(auto w = ptr.lock()) {
+    auto p = e.pos() - w->widget->mapToRoot(Point());
+    MouseEvent e1( p.x,
+                   p.y,
+                   e.button,
+                   mkModifier(),
+                   e.delta,
+                   e.mouseID,
+                   Event::MouseUp );
+    w->widget->mouseUpEvent(e1);
+    }
+  }
+
+void EventDispatcher::dispatchMouseMove(Widget& wnd, MouseEvent &e) {
+  auto btn = e.button;
+  auto key = mouseCaptureKey(e.mouseID,btn);
+  auto it  = mouseUp.find(key);
+  if(btn==Event::ButtonNone) {
+    for(uint8_t i=0; i<Event::ButtonLast; ++i) {
+      auto candidate = mouseUp.find(mouseCaptureKey(e.mouseID,Event::MouseButton(i)));
+      if(candidate!=mouseUp.end() && !candidate->second.expired()) {
+        btn = Event::MouseButton(i);
+        key = candidate->first;
+        it  = candidate;
+        break;
+        }
+      }
+    }
+
+  if(it!=mouseUp.end()) {
+    if(auto w = lock(it->second)) {
+      auto p = e.pos() - w->widget->mapToRoot(Point());
+      MouseEvent e0( p.x,
+                     p.y,
+                     btn,
+                     mkModifier(),
+                     e.delta,
+                     e.mouseID,
+                     Event::MouseDrag  );
+      w->widget->mouseDragEvent(e0);
+      if(e0.isAccepted())
+        return;
+      }
+    }
+
+  if(it!=mouseUp.end()) {
+    if(auto w = lock(it->second)) {
+      auto p = e.pos() - w->widget->mapToRoot(Point());
+      MouseEvent e1( p.x,
+                     p.y,
+                     btn,
+                     e.modifier,
+                     e.delta,
+                     e.mouseID,
+                     Event::MouseMove  );
+      w->widget->mouseMoveEvent(e1);
+      if(e.isAccepted()) {
+        implSetMouseOver(it->second.lock(),e);
+        return;
+        }
+      }
+    }
+
+  MouseEvent e1( e.x,
+                 e.y,
+                 e.button,
+                 mkModifier(),
+                 e.delta,
+                 e.mouseID,
+                 Event::MouseMove  );
+  for(auto i:overlays) {
+    if(!i->bind(wnd))
+      continue;
+    auto wptr = implDispatch(*i,e1);
+    if(wptr!=nullptr) {
+      implSetMouseOver(wptr,e1);
+      return;
+      }
+    }
+  auto wptr = implDispatch(wnd,e1);
+  implSetMouseOver(wptr,e1);
+  }
+
+uint64_t EventDispatcher::mouseCaptureKey(int mouseId, Event::MouseButton button) {
+  return (uint64_t(uint32_t(mouseId))<<32) | uint32_t(button);
+  }
+
+void EventDispatcher::dispatchMouseWheel(Widget& wnd, MouseEvent &e) {
+  if(e.delta==0)
+    return;
+  MouseEvent e1( e.x,
+                 e.y,
+                 e.button,
+                 mkModifier(),
+                 e.delta,
+                 e.mouseID,
+                 Event::MouseWheel );
+  for(auto i:overlays) {
+    if(!i->bind(wnd))
+      continue;
+    implMouseWheel(*i,e1);
+    if(e.isAccepted())
+      return;
+    }
+  implMouseWheel(wnd,e1);
+  }
+
+void EventDispatcher::dispatchKeyDown(Widget &wnd, KeyEvent &e, uint32_t scancode) {
+  auto k = keyUp[scancode];
+  if(auto w = lock(k)) {
+    KeyEvent e1(e.key,e.code,mkModifier(),Event::KeyRepeat);
+    w->widget->keyRepeatEvent(e1);
+    return;
+    }
+
+  KeyEvent e1(e.key,e.code,mkModifier(),e.type());
+  handleModKey(e);
+
+  for(auto i:overlays) {
+    if(!i->bind(wnd))
+      continue;
+    if(implShortcut(*i,e1))
+      return;
+    k = implDispatch(*i,e1);
+    keyUp[scancode] = k;
+    if(!k.expired())
+      return;
+    }
+
+  if(implShortcut(wnd,e1))
+    return;
+  k = implDispatch(wnd,e1);
+  keyUp[scancode] = k;
+  }
+
+void EventDispatcher::dispatchKeyUp(Widget &/*wnd*/, KeyEvent &e, uint32_t scancode) {
+  auto it = keyUp.find(scancode);
+  if(it==keyUp.end())
+    return;
+  KeyEvent e1(e.key,e.code,mkModifier(),e.type());
+  handleModKey(e);
+
+  if(auto w = lock((*it).second)){
+    keyUp.erase(it);
+    w->widget->keyUpEvent(e1);
+    }
+  }
+
+void EventDispatcher::dispatchResize(Widget& wnd, SizeEvent& e, bool force) {
+  if(force && wnd.w()==int(e.w) && wnd.h()==int(e.h))
+    wnd.resizeEvent(e); else
+    wnd.resize(int(e.w),int(e.h));
+  }
+
+void EventDispatcher::dispatchClose(Widget& wnd, CloseEvent& e) {
+  for(auto i:overlays) {
+    if(!i->bind(wnd))
+      continue;
+    i->closeEvent(e);
+    if(e.isAccepted())
+      return;
+    }
+  wnd.closeEvent(e);
+  }
+
+void EventDispatcher::dispatchFocus(Widget& wnd, FocusEvent& e) {
+  if(e.in) {
+    if(auto f = focusLast.lock()) {
+      f->widget->setFocus(true);
+      }
+    focusLast.reset();
+    return;
+    }
+
+  if(!focusLast.expired())
+    return;
+
+  for(auto i:overlays) {
+    if(!i->bind(wnd))
+      continue;
+    focusLast = implDispatch(*i,e);
+    if(!focusLast.expired())
+      return;
+    }
+
+  focusLast = implDispatch(wnd,e);
+  }
+
+void EventDispatcher::dispatchRender(Window& wnd) {
+  if(wnd.w()>0 && wnd.h()>0)
+    wnd.render();
+  }
+
+void EventDispatcher::dispatchOverlayRender(Window& wnd, PaintEvent& e) {
+  for(size_t i=overlays.size(); i>0;) {
+    --i;
+    auto w = overlays[i];
+    if(!w->bind(wnd))
+      continue;
+    w->astate.needToUpdate = false;
+    w->dispatchPaintEvent(e);
+    }
+  }
+
+void EventDispatcher::addOverlay(UiOverlay* ui) {
+  overlays.insert(overlays.begin(),ui);
+  }
+
+void EventDispatcher::takeOverlay(UiOverlay* ui) {
+  for(size_t i=0;i<overlays.size();++i)
+    if(overlays[i]==ui) {
+      overlays.erase(overlays.begin()+int(i));
+      return;
+      }
+  }
+
+void EventDispatcher::dispatchDestroyWindow(SystemApi::Window* w) {
+  for(size_t i=0;i<overlays.size();++i)
+    overlays[i]->dispatchDestroyWindow(w);
+  }
+
+std::shared_ptr<Widget::Ref> EventDispatcher::implDispatch(Widget& w, MouseEvent &event) {
+  if(!w.isVisible()) {
+    event.ignore();
+    return nullptr;
+    }
+  Point            pos=event.pos();
+  Widget::Iterator it(&w);
+  it.moveToEnd();
+
+  for(;it.hasPrev();it.prev()) {
+    Widget* i=it.get();
+    if(i->rect().contains(pos)) {
+      MouseEvent ex(event.x - i->x(),
+                    event.y - i->y(),
+                    event.button,
+                    event.modifier,
+                    event.delta,
+                    event.mouseID,
+                    event.type());
+      auto ptr = implDispatch(*i,ex);
+      if(ex.isAccepted()) {
+        event.accept();
+        if(it.owner!=nullptr)
+          return ptr; else
+          return nullptr;
+        }
+      }
+    }
+
+  if(it.owner!=nullptr) {
+    if(event.type()==Event::MouseDown) {
+      auto     last     = mouseLast.lock();
+      bool     dblClick = false;
+      uint64_t time     = Application::tickCount();
+      if(time-mouseLastTime<1000 && mouseLastBtn==event.button && last!=nullptr && last->widget==it.owner) {
+        dblClick = true;
+        }
+      event.accept();
+      if(dblClick)
+        it.owner->mouseDoubleClickEvent(event); else
+        it.owner->mouseDownEvent(event);
+      } else {
+      event.accept();
+      it.owner->mouseMoveEvent(event);
+      }
+
+    if(event.isAccepted() && it.owner)
+      return it.owner->selfReference();
+    }
+  return nullptr;
+  }
+
+std::shared_ptr<Widget::Ref> EventDispatcher::implDispatch(Widget& root, FocusEvent& event) {
+  Widget* w = &root;
+  while(w->astate.focus!=nullptr) {
+    w = w->astate.focus;
+    }
+  if(w->wstate.focus) {
+    auto ptr = w->selfReference();
+    w->setFocus(false);
+    return ptr;
+    }
+  return nullptr;
+  }
+
+void EventDispatcher::implMouseWheel(Widget& w,MouseEvent &event) {
+  if(!w.isVisible()) {
+    event.ignore();
+    return;
+    }
+  Point            pos=event.pos();
+  Widget::Iterator it(&w);
+  it.moveToEnd();
+  for(;it.hasPrev();it.prev()) {
+    Widget* i=it.get();
+    if(i->rect().contains(pos)){
+      MouseEvent ex(event.x - i->x(),
+                    event.y - i->y(),
+                    event.button,
+                    event.modifier,
+                    event.delta,
+                    event.mouseID,
+                    event.type());
+      if(it.owner!=nullptr) {
+        implMouseWheel(*i,ex);
+        if(ex.isAccepted()) {
+          event.accept();
+          return;
+          }
+        }
+      }
+    }
+
+  if(it.owner!=nullptr)
+    it.owner->mouseWheelEvent(event);
+  }
+
+bool EventDispatcher::implShortcut(Widget& w, KeyEvent& event) {
+  if(!w.isVisible())
+    return false;
+
+  Widget::Iterator it(&w);
+  for(;it.hasNext();it.next()) {
+    Widget* i=it.get();
+    if(implShortcut(*i,event))
+      return true;
+    }
+
+  if(!w.astate.focus && !w.wstate.focus)
+    return false;
+
+  std::lock_guard<std::recursive_mutex> guard(Widget::syncSCuts);
+  for(auto& sc:w.sCuts) {
+    if(!sc->isEnable())
+      continue;
+    if(sc->key() !=event.key  && sc->key() !=KeyEvent::K_NoKey)
+      continue;
+    if(sc->lkey()!=event.code && sc->lkey()!=0)
+      continue;
+
+    if((sc->modifier()&event.modifier)!=sc->modifier())
+      continue;
+
+    sc->onActivated();
+    return true;
+    }
+
+  return false;
+  }
+
+std::shared_ptr<Widget::Ref> EventDispatcher::implDispatch(Widget &root, KeyEvent &event) {
+  Widget* w = &root;
+  while(w->astate.focus!=nullptr) {
+    w = w->astate.focus;
+    }
+  if(w->wstate.focus || &root==w) {
+    auto ptr = w->selfReference();
+    w->keyDownEvent(event);
+    if(event.isAccepted())
+      return ptr;
+    }
+  return nullptr;
+  }
+
+void EventDispatcher::implSetMouseOver(const std::shared_ptr<Widget::Ref> &wptr,MouseEvent& orig) {
+  auto    widget = wptr==nullptr ? nullptr : wptr->widget;
+  Widget* oldW   = nullptr;
+  if(auto old = mouseOver.lock())
+    oldW = old->widget;
+
+  if(widget==oldW)
+    return;
+
+  implExcMouseOver(widget,oldW);
+
+  if(oldW!=nullptr) {
+    auto p = orig.pos() - oldW->mapToRoot(Point());
+    MouseEvent e( p.x,
+                  p.y,
+                  Event::ButtonNone,
+                  orig.modifier,
+                  0,
+                  0,
+                  Event::MouseLeave );
+    oldW->mouseLeaveEvent(e);
+    }
+
+  mouseOver = wptr;
+  if(widget!=nullptr) {
+    auto p = orig.pos() - widget->mapToRoot(Point());
+    MouseEvent e( p.x,
+                  p.y,
+                  Event::ButtonNone,
+                  orig.modifier,
+                  0,
+                  0,
+                  Event::MouseLeave );
+    widget->mouseEnterEvent(e);
+    }
+  }
+
+void EventDispatcher::implExcMouseOver(Widget* w, Widget* old) {
+  auto* wx = old;
+  while(wx!=nullptr) {
+    wx->wstate.moveOver = false;
+    wx = wx->owner();
+    }
+
+  wx = w;
+  if(w!=nullptr) {
+    auto root = w;
+    while(root->owner()!=nullptr)
+      root = root->owner();
+    if(auto r = dynamic_cast<Window*>(root))
+      r->implShowCursor(w->wstate.cursor);
+    if(auto r = dynamic_cast<UiOverlay*>(root))
+      r->implShowCursor(w->wstate.cursor);
+    }
+  while(wx!=nullptr) {
+    wx->wstate.moveOver = true;
+    wx = wx->owner();
+    }
+  }
+
+void EventDispatcher::handleModKey(const KeyEvent& e) {
+  const bool v = e.type()==Event::KeyDown ? true : false;
+  switch(e.key) {
+    case Event::K_LControl:
+      keyMod.ctrlL = v;
+      break;
+    case Event::K_RControl:
+      keyMod.ctrlR = v;
+      break;
+#ifdef __OSX__
+    case Event::K_LCommand:
+      keyMod.cmdL = v;
+      break;
+    case Event::K_RCommand:
+      keyMod.cmdR = v;
+      break;
+#endif
+    case Event::K_LShift:
+      keyMod.shiftL = v;
+      break;
+    case Event::K_RShift:
+      keyMod.shiftR = v;
+      break;
+    case Event::K_LAlt:
+      keyMod.altL = v;
+      break;
+    case Event::K_RAlt:
+      keyMod.altR = v;
+      break;
+    default:
+      break;
+    }
+  }
+
+std::shared_ptr<Widget::Ref> EventDispatcher::lock(std::weak_ptr<Widget::Ref>& w) {
+  auto ptr = w.lock();
+  if(ptr==nullptr)
+    return nullptr;
+  Widget* wx = ptr.get()->widget;
+  while(wx->owner()!=nullptr) {
+    wx = wx->owner();
+    }
+  if(dynamic_cast<Window*>(wx) || dynamic_cast<UiOverlay*>(wx) || wx==customRoot)
+    return ptr;
+  return nullptr;
+  }
+
+Event::Modifier EventDispatcher::mkModifier() const {
+  uint8_t ret = 0;
+  if(keyMod.ctrlL || keyMod.ctrlR)
+    ret |= Event::Modifier::M_Ctrl;
+  if(keyMod.altL || keyMod.altR)
+    ret |= Event::Modifier::M_Alt;
+  if(keyMod.shiftL || keyMod.shiftR)
+    ret |= Event::Modifier::M_Shift;
+#ifndef __OSX__
+  if(keyMod.ctrlL || keyMod.ctrlR)
+    ret |= Event::Modifier::M_Command;
+#else
+  if(keyMod.cmdL || keyMod.cmdR)
+    ret |= Event::Modifier::M_Command;
+#endif
+  return Event::Modifier(ret);
+  }

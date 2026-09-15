@@ -1,0 +1,294 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+#extension GL_EXT_control_flow_attributes : enable
+// bindless
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "virtual_shadow/vsm_common.glsl"
+#include "common.glsl"
+#include "scene.glsl"
+
+const uint NumThreads    = gl_WorkGroupSize.x*gl_WorkGroupSize.y*gl_WorkGroupSize.z;
+const uint NumTilesX     = VSM_PAGE_SIZE/gl_WorkGroupSize.x;
+const uint NumTilesY     = VSM_PAGE_SIZE/gl_WorkGroupSize.y;
+const uint NumTiles      = NumTilesX * NumTilesY;
+const uint MaxVert       = 64;
+const uint MaxPrim       = 64;
+const uint MaxInd        = (MaxPrim*3);
+const uint MaxMesh       = 1;//NumThreads / 64;
+
+struct Vertex {
+  vec3 pos;
+  vec2 uv;
+  };
+
+layout(push_constant, std430) uniform UboPush {
+  int meshletCount;
+  } push;
+layout(binding = 0, r32ui)  uniform uimage2D  outputImage;
+layout(binding = 1, std140) uniform UboScene    { SceneDesc scene;       };
+layout(binding = 2, std430) readonly buffer Vsm { VsmHeader header; uint pageList[]; } vsm;
+layout(binding = 3, std430) readonly buffer Cbo { Cluster clusters[];    };
+layout(binding = 4, std430) readonly buffer Mem { uint    instanceMem[]; };
+layout(binding = 5, std430) readonly buffer Ibo { uint    indexes [];    } ibo[];
+layout(binding = 6, std430) readonly buffer Vbo { float   vertices[];    } vbo[];
+layout(binding = 7)         uniform  texture2D textureMain[];
+layout(binding = 8)         uniform  sampler   samplerMain;
+
+shared Vertex meshVertices    [MaxVert * MaxMesh];
+shared uvec3  primitiveIndices[MaxPrim * MaxMesh];
+shared uint   meshPrimCount;
+
+shared uvec3  meshletList[1024];
+shared uint   numMeshlets;
+
+// mesh processing
+uvec2 pullMeshlet(const uint meshletId, const uint bucketId) {
+  nonuniformEXT uint bId = bucketId;
+
+  const uint iboOffset = meshletId * MaxPrim + MaxPrim - 1;
+  const uint bits      = ibo[bId].indexes[iboOffset];
+  uvec4 prim;
+  prim.x = ((bits >>  0) & 0xFF);
+  prim.y = ((bits >>  8) & 0xFF);
+
+  uint vertCount = MaxVert;
+  uint primCount = MaxPrim;
+  if(prim.x==prim.y) {
+    // last dummy triangle encodes primitive count
+    prim.z = ((bits >> 16) & 0xFF);
+    prim.w = ((bits >> 24) & 0xFF);
+
+    primCount = prim.z;
+    vertCount = prim.w;
+    }
+  return uvec2(vertCount, primCount);
+  }
+
+uvec3 pullPrimitive(const uint meshletId, const uint bucketId, const uint laneId) {
+  nonuniformEXT uint bId = bucketId;
+
+  const uint iboOffset = meshletId * MaxPrim + laneId;
+  const uint bits      = ibo[bId].indexes[iboOffset];
+  uvec3 prim;
+  prim.x = ((bits >>  0) & 0xFF);
+  prim.y = ((bits >>  8) & 0xFF);
+  prim.z = ((bits >> 16) & 0xFF);
+  return prim;
+  }
+
+mat4 pullMatrix(uint i) {
+  i *= 16;
+  mat4 ret;
+  ret[0][0] = uintBitsToFloat(instanceMem[i+0]);
+  ret[0][1] = uintBitsToFloat(instanceMem[i+1]);
+  ret[0][2] = uintBitsToFloat(instanceMem[i+2]);
+  ret[0][3] = uintBitsToFloat(instanceMem[i+3]);
+  ret[1][0] = uintBitsToFloat(instanceMem[i+4]);
+  ret[1][1] = uintBitsToFloat(instanceMem[i+5]);
+  ret[1][2] = uintBitsToFloat(instanceMem[i+6]);
+  ret[1][3] = uintBitsToFloat(instanceMem[i+7]);
+  ret[2][0] = uintBitsToFloat(instanceMem[i+8]);
+  ret[2][1] = uintBitsToFloat(instanceMem[i+9]);
+  ret[2][2] = uintBitsToFloat(instanceMem[i+10]);
+  ret[2][3] = uintBitsToFloat(instanceMem[i+11]);
+  ret[3][0] = uintBitsToFloat(instanceMem[i+12]);
+  ret[3][1] = uintBitsToFloat(instanceMem[i+13]);
+  ret[3][2] = uintBitsToFloat(instanceMem[i+14]);
+  ret[3][3] = uintBitsToFloat(instanceMem[i+15]);
+  return ret;
+  }
+
+Instance pullInstance(uint i) {
+  i *= 16;
+  Instance ret;
+  ret.mat[0][0] = uintBitsToFloat(instanceMem[i+0]);
+  ret.mat[0][1] = uintBitsToFloat(instanceMem[i+1]);
+  ret.mat[0][2] = uintBitsToFloat(instanceMem[i+2]);
+  ret.mat[1][0] = uintBitsToFloat(instanceMem[i+3]);
+  ret.mat[1][1] = uintBitsToFloat(instanceMem[i+4]);
+  ret.mat[1][2] = uintBitsToFloat(instanceMem[i+5]);
+  ret.mat[2][0] = uintBitsToFloat(instanceMem[i+6]);
+  ret.mat[2][1] = uintBitsToFloat(instanceMem[i+7]);
+  ret.mat[2][2] = uintBitsToFloat(instanceMem[i+8]);
+  ret.mat[3][0] = uintBitsToFloat(instanceMem[i+9]);
+  ret.mat[3][1] = uintBitsToFloat(instanceMem[i+10]);
+  ret.mat[3][2] = uintBitsToFloat(instanceMem[i+11]);
+  ret.fatness   = uintBitsToFloat(instanceMem[i+12]);
+  ret.animPtr   = instanceMem[i+13];
+  return ret;
+  }
+
+Vertex pullVertex(const uint meshletId, const uint bucketId, const uint laneId) {
+  nonuniformEXT uint bId = bucketId;
+  uint vboOffset = meshletId * MaxVert + laneId;
+
+  // static geometry
+  uint id = vboOffset * 9;
+  Vertex ret;
+  ret.pos    = vec3(vbo[bId].vertices[id + 0], vbo[bId].vertices[id + 1], vbo[bId].vertices[id + 2]);
+  ret.uv     = vec2(vbo[bId].vertices[id + 6], vbo[bId].vertices[id + 7]);
+  //vec3 normal = vec3(vbo[bId].vertices[id + 3], vbo[bId].vertices[id + 4], vbo[bId].vertices[id + 5]);
+  //uint color  = floatBitsToUint(vbo[bId].vertices[id + 8]);
+  return ret;
+  }
+
+Vertex pullVertexA(const uint instanceId, const uint meshletId, const uint bucketId, const uint laneId) {
+  const Instance obj = pullInstance(instanceId);
+  if(obj.animPtr==0) {
+    vec3 dpos = vec3(0); //TODO
+    Vertex ret = pullVertex(meshletId, bucketId, laneId);
+    ret.pos  = obj.mat*vec4(ret.pos,1.0) + dpos;
+    ret.pos    = vec3(0); //pos;
+    return ret;
+    }
+
+  nonuniformEXT uint bId = bucketId;
+  uint vboOffset = meshletId * MaxVert + laneId;
+
+  // skinned geometry
+  uint  id     = vboOffset * 23;
+  vec3  normal = vec3(vbo[bId].vertices[id +  0], vbo[bId].vertices[id + 1], vbo[bId].vertices[id + 2]);
+  vec2  uv     = vec2(vbo[bId].vertices[id +  3], vbo[bId].vertices[id + 4]);
+  //uint  color  = floatBitsToUint(vbo[bId].vertices[id + 5]);
+  vec3  pos0   = vec3(vbo[bId].vertices[id +  6], vbo[bId].vertices[id +  7], vbo[bId].vertices[id +  8]);
+  vec3  pos1   = vec3(vbo[bId].vertices[id +  9], vbo[bId].vertices[id + 10], vbo[bId].vertices[id + 11]);
+  vec3  pos2   = vec3(vbo[bId].vertices[id + 12], vbo[bId].vertices[id + 13], vbo[bId].vertices[id + 14]);
+  vec3  pos3   = vec3(vbo[bId].vertices[id + 15], vbo[bId].vertices[id + 16], vbo[bId].vertices[id + 17]);
+  uvec4 boneId = uvec4(unpackUnorm4x8(floatBitsToUint(vbo[bId].vertices[id + 18]))*255.0) + uvec4(obj.animPtr);
+  vec4  weight = vec4(vbo[bId].vertices[id + 19], vbo[bId].vertices[id + 20], vbo[bId].vertices[id + 21], vbo[bId].vertices[id + 22]);
+
+  normal = obj.mat*vec4(normal,0);
+
+  // Position
+  vec3 pos  = vec3(0);
+  vec3 dpos = normal*obj.fatness;
+  {
+    const vec3  t0 = (pullMatrix(boneId.x)*vec4(pos0,1.0)).xyz;
+    const vec3  t1 = (pullMatrix(boneId.y)*vec4(pos1,1.0)).xyz;
+    const vec3  t2 = (pullMatrix(boneId.z)*vec4(pos2,1.0)).xyz;
+    const vec3  t3 = (pullMatrix(boneId.w)*vec4(pos3,1.0)).xyz;
+    pos = (t0*weight.x + t1*weight.y + t2*weight.z + t3*weight.w) + dpos;
+  }
+
+  Vertex ret;
+  ret.pos    = pos;
+  ret.uv     = uv;
+  //ret.pos    = vec3(0);
+  return ret;
+  }
+
+// culling
+bool projectSphere(const vec4 sphere, out vec4 aabb, out float depthMin) {
+  const vec3  c = (scene.viewProject * vec4(sphere.xyz, 1)).xyz;
+  const float R = sphere.w;
+
+  const float smWidthInv = 1.0/(1024.0); // NOTE: from camera.cpp
+  const float zScale     = 1.0/(5*5120.0);
+
+  float Rz = R * zScale;
+  if(c.z - Rz > 1 || c.z + Rz < 0)
+    return false;
+
+  float Rx = R * smWidthInv;
+  float Ry = R * smWidthInv;
+  aabb = vec4(c.xy-vec2(Rx,Ry), c.xy+vec2(Rx,Ry));
+  // aabb = c.xyxy;
+  return true;
+  }
+
+bool projectCluster(const Cluster cluster, out vec4 aabb, out float depthMin) {
+  if(cluster.instanceId==0xFFFFFFFF)
+    return projectSphere(cluster.sphere, aabb, depthMin);
+  return projectSphere(cluster.sphere, aabb, depthMin);
+  // return projectInstance(cluster, aabb, depthMin);
+  }
+
+bool pageBoundsTest(in vec4 aabb, const ivec3 page, const ivec2 sz) {
+  aabb /= (1u << page.z);
+  aabb = (aabb*0.5+0.5); // [0..1]
+  aabb = (aabb*VSM_PAGE_TBL_SIZE - page.xyxy);
+  if(aabb.z < 0 || sz.x <= aabb.x)
+    return false;
+  if(aabb.w < 0 || sz.y <= aabb.y)
+    return false;
+  const float dx = (aabb.z-aabb.x)*VSM_PAGE_SIZE;
+  const float dy = (aabb.w-aabb.y)*VSM_PAGE_SIZE;
+  if(dx<1 || dy<1)
+    return false; // subpixel sized meshlet
+  return true;
+  }
+
+void gatherMeshlets(uint pageData) {
+  const ivec3 page = unpackVsmPageInfo(pageData);
+  const ivec2 sz   = unpackVsmPageSize(pageData);
+
+  for(uint i=gl_LocalInvocationIndex; i<push.meshletCount; i+=NumThreads) {
+    const Cluster cluster = clusters[i];
+    if(cluster.sphere.w<=0.f)
+      continue; // disabled or deleted
+    vec4  aabb     = vec4(0);
+    float depthMin = 1;
+    if(!projectCluster(cluster, aabb, depthMin))
+      continue;
+    if(!pageBoundsTest(aabb, page, sz))
+      continue;
+    const uint at = atomicAdd(numMeshlets, cluster.meshletCount);
+    for(uint r=0; r<cluster.meshletCount && r<meshletList.length(); ++r) {
+      meshletList[at + r] =  uvec3(cluster.instanceId, cluster.firstMeshlet+r, cluster.bucketId_commandId);
+      }
+    }
+  barrier();
+
+  numMeshlets = min(numMeshlets, meshletList.length());
+  barrier();
+  }
+
+void processMeshlet(const uint instanceId, const uint meshletId, const uint bucketId, uint laneID) {
+  const uvec2 mesh       = pullMeshlet(meshletId, bucketId);
+  const uint  vertCount  = mesh.x;
+  const uint  primCount  = mesh.y;
+
+  meshPrimCount = primCount;
+
+  if(laneID<vertCount) {
+    if(instanceId!=0xFFFFFFFF)
+      meshVertices[laneID] = pullVertexA(instanceId, meshletId, bucketId, laneID); else
+      meshVertices[laneID] = pullVertex(meshletId, bucketId, laneID);
+    }
+
+  if(laneID<primCount)
+    primitiveIndices[laneID] = pullPrimitive(meshletId, bucketId, laneID); else
+    primitiveIndices[laneID] = uvec3(0);
+  }
+
+void processMeshlets() {
+  for(uint i=0; i<numMeshlets; ++i) {
+    const uvec3 m = meshletList[i];
+    processMeshlet(m.x, m.y, m.z >> 16, gl_LocalInvocationIndex);
+    barrier();
+    }
+  }
+
+void main() {
+  const uint pageId = gl_WorkGroupID.x;
+  if(pageId >= vsm.header.pageCount)
+    return; // uniform
+
+  numMeshlets = 0;
+  barrier();
+
+  const ivec2 pageCoord = ivec2(pageId%32, pageId/32)*VSM_PAGE_SIZE;
+
+  gatherMeshlets(vsm.pageList[pageId]);
+  processMeshlets();
+
+  const uint  tileId    = 0;
+  const ivec2 fragCoord = ivec2(tileId%NumTilesX, tileId/NumTilesX)*ivec2(gl_WorkGroupSize.xy) + ivec2(gl_LocalInvocationID.xy);
+  imageStore(outputImage, pageCoord+fragCoord, uvec4(numMeshlets));
+  }

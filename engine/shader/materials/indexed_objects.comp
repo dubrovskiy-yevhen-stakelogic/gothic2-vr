@@ -1,0 +1,27 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#include "scene.glsl"
+layout(local_size_x=64) in;
+layout(binding=0,std430) readonly buffer Source { IndirectCmd source[]; };
+// indexCount, firstIndex, fixed meshlets per object, reserved
+layout(binding=1,std430) readonly buffer Ranges { uvec4 ranges[]; };
+struct IndexedCommand {
+  uint indexCount;
+  uint instanceCount;
+  uint firstIndex;
+  int vertexOffset;
+  uint firstInstance;
+  };
+layout(binding=2,std430) writeonly buffer Output { IndexedCommand outputCmd[]; };
+void main() {
+  const uint i=gl_GlobalInvocationID.x;
+  if(i>=source.length()) return;
+  const uvec4 range=ranges[i];
+  IndexedCommand result;
+  result.indexCount=range.x;
+  result.instanceCount=range.z>0 ? source[i].instanceCount/range.z : 0;
+  result.firstIndex=range.y;
+  result.vertexOffset=0;
+  result.firstInstance=0;
+  outputCmd[i]=result;
+  }

@@ -1,0 +1,46 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+// VR: the second eye's HiZ base from the first eye's final depth. hiZLeft holds
+// the per-tile maximum depth of the first eye's complete depth buffer (hiz_pot);
+// a tile of the second eye takes, over the first-eye tiles it can map to
+// (principal-point shift plus the parallax down to the near limit, computed by
+// vr/vrstereohiz.h), the maximum of each tile's value capped at the largest
+// depth a point can have while mapping through that tile. Outside the first
+// eye's image (validTiles: the image is smaller than the power-of-two HiZ, the
+// tiles beyond hold 0) a tile contributes its cap: unknown content, at most
+// that deep. Larger values are farther, so the result is conservative for
+// occlusion culling.
+#include "common.glsl"
+
+layout(binding = 0, r16) uniform readonly  image2D hiZLeft;
+layout(binding = 1, r16) uniform writeonly image2D hiZ;
+
+layout(push_constant, std430) uniform Push {
+  int   shiftTiles;     // first tile of the window, relative to the destination tile
+  int   windowTiles;    // number of tiles after the first
+  int   marginY;        // tiles above and below
+  int   validX;         // tiles of the first eye's image that hold depth
+  int   validY;
+  float depthClamp[16]; // depth-buffer cap per window tile; >= 1: none
+  } push;
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+  const ivec2 dst = ivec2(gl_GlobalInvocationID.xy);
+  const ivec2 sz  = imageSize(hiZ);
+  if(any(greaterThanEqual(dst, sz)))
+    return;
+  float z = 0.0;
+  for(int dy=-push.marginY; dy<=push.marginY; ++dy) {
+    for(int i=0; i<=push.windowTiles && i<16; ++i) {
+      const float cap = clamp(packHiZ(push.depthClamp[i]) + 1.0/32768.0, 0.0, 1.0);
+      const ivec2 s   = ivec2(dst.x + push.shiftTiles + i, dst.y + dy);
+      float v = 1.0; // outside the first eye's image: unknown
+      if(s.x>=0 && s.y>=0 && s.x<push.validX && s.y<push.validY)
+        v = imageLoad(hiZLeft, s).r;
+      z = max(z, min(v, cap));
+      }
+    }
+  imageStore(hiZ, dst, vec4(z));
+  }

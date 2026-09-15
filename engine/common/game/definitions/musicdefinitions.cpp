@@ -1,0 +1,33 @@
+#include "musicdefinitions.h"
+
+#include <Tempest/Log>
+
+#include "gothic.h"
+
+using namespace Tempest;
+
+MusicDefinitions::MusicDefinitions() {
+  vm = Gothic::inst().createPhoenixVm("Music.dat");
+
+  vm->enumerate_instances_by_class_name("C_MusicTheme", [this](zenkit::DaedalusSymbol& s) {
+    themes.push_back(vm->init_instance<zenkit::IMusicTheme>(&s));
+    });
+  }
+
+MusicDefinitions::~MusicDefinitions() {
+  }
+
+const zenkit::IMusicTheme* MusicDefinitions::operator [](std::string_view name) const {
+  if(!vm)
+    return nullptr;
+
+  auto id = vm->find_symbol_by_name(name);
+  if(id==nullptr)
+    return nullptr;
+  for(auto& i:themes) {
+    auto* sym = vm->find_symbol_by_instance(i);
+    if(sym->index() == id->index())
+      return i.get();
+    }
+  return nullptr;
+  }

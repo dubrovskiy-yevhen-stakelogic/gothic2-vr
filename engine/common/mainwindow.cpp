@@ -1,0 +1,1862 @@
+#include "mainwindow.h"
+#include "utils/feedback.h"
+
+#include <Tempest/Except>
+#include <Tempest/CpuTrace>
+#include <Tempest/Painter>
+
+#include <Tempest/Brush>
+#include <Tempest/Pen>
+#include <Tempest/Layout>
+#include <Tempest/Application>
+#include <Tempest/Log>
+
+#include "ui/dialogmenu.h"
+#include "ui/menuroot.h"
+#include "ui/stacklayout.h"
+#include "ui/videowidget.h"
+
+#include "utils/mouseutil.h"
+#include "utils/string_frm.h"
+#include "world/triggers/abstracttrigger.h"
+#include "world/objects/npc.h"
+#include "game/serialize.h"
+#include "game/globaleffects.h"
+#include "utils/gthfont.h"
+#include "utils/dbgpainter.h"
+
+#include "commandline.h"
+#include "gothic.h"
+#include "vr/questxr.h"
+#include "vr/vrdefaults.h"
+#include <sstream>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <locale>
+
+using namespace Tempest;
+
+MainWindow::MainWindow(Device& device)
+  : Window(Maximized),device(device),
+#if !defined(GOTHIC2VR_OPENXR)
+    swapchain(device,hwnd()),
+#endif
+    atlas(device),rootMenu(keycodec),inventory(keycodec),
+    dialogs(inventory),document(keycodec),
+    console(*this),
+    player(dialogs,inventory)
+#if defined(__MOBILE_PLATFORM__)
+    ,mobileUi([this](TouchInput::Command cmd, bool pressed){ onTouchCommand(cmd,pressed); },
+              [this](TouchInput::Command cmd, TouchInput::WheelPhase phase, Point pos){ return onTouchWheel(cmd,phase,pos); },
+              [this](int steps){
+                if(rootMenu.isActive() && !video.isActive()) rootMenu.adjustValue(steps);
+                })
+#endif
+    {
+  Gothic::inst().onSettingsChanged.bind(this,&MainWindow::onSettings);
+  onSettings();
+#if defined(__ANDROID__)
+  if(!std::filesystem::exists("Gamepad.ini")) {
+    std::ofstream file("Gamepad.ini");
+    file<<GamepadBindings::defaults();
+    if(!file) Log::e("Unable to create Gamepad.ini");
+    }
+  std::ifstream bindings("Gamepad.ini");
+  if(bindings) {
+    for(auto& error:controllerBindings.load(bindings)) Log::e("Gamepad.ini: ",error);
+    }
+#endif
+
+  if(Gothic::inst().version().game==2)
+    setWindowTitle("Gothic II"); else
+    setWindowTitle("Gothic");
+
+  if(!CommandLine::inst().isWindowMode())
+    setFullscreen(true);
+
+  //renderer.resetSwapchain();
+  setupUi();
+#if defined(GOTHIC2VR_OPENXR)
+  auto& xr=QuestXr::inst();
+  std::ifstream vrSettings("VR.ini");
+  if(vrSettings) {
+    vrMenu.settings.read(vrSettings);
+    } else {
+    std::istringstream defaults(Vr::ReleaseDefaults);
+    vrMenu.settings.read(defaults);
+    }
+  Widget::resize(int(xr.width()),int(xr.height()));
+  vrOutput=device.attachment(TextureFormat::RGBA8,xr.width(),xr.height());
+  xr.invalidateCopyCache();
+  mobileUi.setTouchEnabled(false);
+#endif
+
+  barBack    = Resources::loadTexture("BAR_BACK.TGA");
+  barHp      = Resources::loadTexture("BAR_HEALTH.TGA");
+  barMisc    = Resources::loadTexture("BAR_MISC.TGA");
+  barMana    = Resources::loadTexture("BAR_MANA.TGA");
+
+  focusImg   = Resources::loadTexture("FOCUS_HIGHLIGHT.TGA");
+
+  loadBox    = Resources::loadTexture("PROGRESS.TGA");
+  loadVal    = Resources::loadTexture("PROGRESS_BAR.TGA");
+
+  Gothic::inst().onStartGame   .bind(this,&MainWindow::startGame);
+  Gothic::inst().onLoadGame    .bind(this,&MainWindow::loadGame);
+  Gothic::inst().onSaveGame    .bind(this,&MainWindow::saveGame);
+
+  Gothic::inst().onStartLoading.bind(this,&MainWindow::onStartLoading);
+  Gothic::inst().onWorldLoaded .bind(this,&MainWindow::onWorldLoaded);
+  Gothic::inst().onSessionExit .bind(this,&MainWindow::onSessionExit);
+
+  Gothic::inst().onVideo       .bind(this,&MainWindow::onVideo);
+
+  Gothic::inst().onBenchmarkFinished.bind(this,&MainWindow::onBenchmarkFinished);
+
+  if(!Gothic::inst().defaultSave().empty()){
+    Gothic::inst().load(Gothic::inst().defaultSave());
+    rootMenu.popMenu();
+    }
+  else if(!CommandLine::inst().doStartMenu()) {
+    startGame(Gothic::inst().defaultWorld());
+    rootMenu.popMenu();
+    }
+  else {
+    rootMenu.processMusicTheme();
+    }
+
+  funcKey[2] = Shortcut(*this,Event::M_NoModifier,Event::K_F2);
+  funcKey[2].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F2>);
+
+  funcKey[3] = Shortcut(*this,Event::M_NoModifier,Event::K_F3);
+  funcKey[3].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F3>);
+
+  funcKey[4] = Shortcut(*this,Event::M_NoModifier,Event::K_F4);
+  funcKey[4].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F4>);
+
+  funcKey[5] = Shortcut(*this,Event::M_NoModifier,Event::K_F5);
+  funcKey[5].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F5>);
+
+  funcKey[6] = Shortcut(*this,Event::M_NoModifier,Event::K_F6);
+  funcKey[6].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F6>);
+
+  funcKey[7] = Shortcut(*this,Event::M_NoModifier,Event::K_F7);
+  funcKey[7].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F7>);
+
+  funcKey[9] = Shortcut(*this,Event::M_NoModifier,Event::K_F9);
+  funcKey[9].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F9>);
+
+  funcKey[10] = Shortcut(*this,Event::M_NoModifier,Event::K_F10);
+  funcKey[10].onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_F10>);
+
+  displayPos = Shortcut(*this,Event::M_Alt,Event::K_P);
+  displayPos.onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_P>);
+#if defined(__ANDROID__)
+  // Controller menu actions can open modal dialogs, so dispatch them outside rendering.
+  controllerTimer.timeout.bind(this,&MainWindow::tickGamepad);
+  controllerTimer.start(1);
+#endif
+  }
+
+MainWindow::~MainWindow() {
+#if defined(__ANDROID__)
+  controllerTimer.stop();
+#endif
+  GameMusic::inst().stopMusic();
+  Gothic::inst().cancelLoading();
+  device.waitIdle();
+  takeWidget(&dialogs);
+  takeWidget(&inventory);
+  takeWidget(&chapter);
+  takeWidget(&document);
+  takeWidget(&video);
+  takeWidget(&rootMenu);
+#if defined(__MOBILE_PLATFORM__)
+  takeWidget(&mobileUi);
+#endif
+  removeAllWidgets();
+  // unload
+  Gothic::inst().setGame(std::unique_ptr<GameSession>());
+  }
+
+float MainWindow::uiScale() const {
+#if defined(__ANDROID__)
+  // Fit Gothic's reference interface to the phone with room around its edges.
+  return std::max(0.5f,0.85f*std::min(float(w())/640.f,float(h())/480.f));
+#else
+  return SystemApi::uiScale(hwnd());
+#endif
+  }
+
+void MainWindow::setupUi() {
+  setLayout(new StackLayout());
+  addWidget(&document);
+  addWidget(&dialogs);
+  addWidget(&inventory);
+  addWidget(&chapter);
+  addWidget(&video);
+  addWidget(&rootMenu);
+#if defined(__MOBILE_PLATFORM__)
+  addWidget(&mobileUi);
+#endif
+
+  rootMenu.setMainMenu();
+
+  Gothic::inst().onDialogPipe  .bind(&dialogs,&DialogMenu::openPipe);
+  Gothic::inst().isNpcInDialogFn = std::bind(&DialogMenu::isNpcInDialog, &dialogs, std::placeholders::_1);
+
+  Gothic::inst().onPrintScreen .bind(&dialogs,&DialogMenu::printScreen);
+  Gothic::inst().onPrint       .bind(&dialogs,&DialogMenu::print);
+
+  Gothic::inst().onIntroChapter.bind(&chapter, &ChapterScreen::show);
+  Gothic::inst().onShowDocument.bind(&document,&DocumentMenu::show);
+  }
+
+void MainWindow::paintEvent(PaintEvent& event) {
+  Painter p(event);
+  auto world = Gothic::inst().world();
+  auto st    = Gothic::inst().checkLoading();
+
+  if(!Gothic::inst().isInGame() && st==Gothic::LoadState::Idle && background.isEmpty()) {
+    background = Resources::loadTextureUncached("STARTSCREEN.TGA");
+    }
+
+  if(world==nullptr && !background.isEmpty()) {
+    p.setBrush(Color(0.0));
+    p.drawRect(0,0,w(),h());
+
+    if(st==Gothic::LoadState::Idle) {
+      p.setBrush(Brush(background,Painter::NoBlend));
+      p.drawRect(0,0,w(),h(),
+                 0,0,background.w(),background.h());
+      }
+    }
+
+  if(world!=nullptr) {
+    world->globalFx()->scrBlend(p,Rect(0,0,w(),h()));
+    }
+
+  if(st!=Gothic::LoadState::Idle && st!=Gothic::LoadState::Finalize) {
+    if(st==Gothic::LoadState::Saving) {
+      drawSaving(p);
+      } else {
+      if(auto back = Gothic::inst().loadingBanner()) {
+        p.setBrush(Brush(*back,Painter::NoBlend));
+        p.drawRect(0,0,this->w(),this->h(),
+                   0,0,back->w(),back->h());
+        }
+      if(loadBox!=nullptr && !loadBox->isEmpty()) {
+        if(Gothic::inst().version().game==1) {
+          int lw = int(w()*0.5);
+          int lh = int(h()*0.05);
+          drawLoading(p,(w()-lw)/2, int(h()*0.75), lw, lh);
+          } else {
+          drawLoading(p,int(w()*0.92)-loadBox->w(), int(h()*0.12), loadBox->w(),loadBox->h());
+          }
+        }
+      }
+    } else {
+    if(world!=nullptr && world->view()){
+      auto& camera = *Gothic::inst().camera();
+
+      auto vp = camera.viewProj();
+      p.setBrush(Color(1.0));
+
+      drawMsg(p);
+
+      auto focus = world->validateFocus(player.focus());
+      paintFocus(p,focus,vp);
+
+      if(auto pl = Gothic::inst().player()){
+        if (!Gothic::inst().isDesktop()) {
+          auto& opt = Gothic::options();
+          float hp  = float(pl->attribute(ATR_HITPOINTS))/float(pl->attribute(ATR_HITPOINTSMAX));
+          float mp  = float(pl->attribute(ATR_MANA))     /float(pl->attribute(ATR_MANAMAX));
+
+          bool showHealthBar = opt.showHealthBar;
+          bool showManaBar   = (opt.showManaBar==2) || (opt.showManaBar==1 && (pl->weaponState()==WeaponState::Mage || inventory.isActive()));
+          bool showSwimBar   = (opt.showSwimBar==2) || (opt.showSwimBar==1 && pl->isDive());
+
+          bool centered = false;
+#if defined(__ANDROID__)
+          centered = Gothic::settingsGetI("GAME","centerPlayerBars")!=0;
+#endif
+          const int pad = centered ? std::max(10,int(8*Gothic::interfaceScale(this))) : 10;
+          const int row = playerBarSize().h+pad;
+          int barY = h()-pad;
+          if(showHealthBar) {
+            drawBar(p,barHp, centered ? w()/2 : 10, barY, hp,
+                    (centered ? AlignHCenter : AlignLeft) | AlignBottom);
+            if(centered) barY-=row;
+            }
+          if(showManaBar) {
+            drawBar(p,barMana, centered ? w()/2 : w()-10, barY, mp,
+                    (centered ? AlignHCenter : AlignRight) | AlignBottom);
+            if(centered) barY-=row;
+            }
+          if(showSwimBar) {
+            uint32_t gl = pl->guild();
+            auto     v  = float(pl->world().script().guildVal().dive_time[gl]);
+            if(v>0) {
+              auto t = float(pl->diveTime())/1000.f;
+              drawBar(p,barMisc,w()/2,barY, (v-t)/(v), AlignHCenter | AlignBottom);
+              }
+            }
+          }
+        }
+      }
+    }
+
+  if(auto c = Gothic::inst().camera()) {
+    DbgPainter dbg(p,c->viewProj(),w(),h());
+    c->debugDraw(dbg);
+    if(world!=nullptr) {
+      world->marchPoints(dbg);
+      world->marchInteractives(dbg);
+      world->view()->dbgLights(dbg);
+      world->marchCsCameras(dbg);
+      }
+    }
+
+  renderer.dbgDraw(p);
+
+  const float scale = Gothic::interfaceScale(this);
+#if !defined(__ANDROID__)
+  if(Gothic::inst().doFrate() && !Gothic::inst().isDesktop()) {
+    char fpsT[64]={};
+    std::snprintf(fpsT,sizeof(fpsT),"fps = %.2f",fps.get());
+
+    auto& fnt = Resources::font(scale);
+    fnt.drawText(p,5,fnt.pixelSize()+5,fpsT);
+    }
+#endif
+
+  if(!Gothic::inst().isDesktop() && world!=nullptr) {
+    if(Gothic::inst().doClock()) {
+      auto hour = world->time().hour();
+      auto min  = world->time().minute();
+      auto& fnt = Resources::font(scale);
+      string_frm clockT(int(hour),":",int(min));
+      fnt.drawText(p,w()-fnt.textSize(clockT).w-5,fnt.pixelSize()+5,clockT);
+      }
+
+    auto c = Gothic::inst().camera();
+    if(Gothic::inst().doVobBox() && c!=nullptr) {
+      DbgPainter dbg(p,c->viewProj(),w(),h());
+      world->drawVobBoxNpcNear(dbg);
+      }
+
+    if(Gothic::inst().doVobRays() && c!=nullptr) {
+      DbgPainter dbg(p,c->viewProj(),w(),h());
+      player.drawVobRay(dbg);
+      }
+    }
+
+  if(auto wx = Gothic::inst().worldView()) {
+    wx->dbgClusters(p, Vec2(float(w()), float(h())));
+    }
+  }
+
+void MainWindow::resizeEvent(SizeEvent&) {
+#if defined(GOTHIC2VR_OPENXR)
+  if(auto camera=Gothic::inst().camera())
+    camera->setViewport(QuestXr::inst().width(),QuestXr::inst().height());
+#else
+#if defined(__ANDROID__)
+  framePacer.reset();
+#endif
+  for(auto& i:fence)
+    i.wait();
+  swapchain.reset();
+  if(auto camera = Gothic::inst().camera())
+    camera->setViewport(swapchain.w(),swapchain.h());
+
+  const bool fs = SystemApi::isFullscreen(hwnd());
+  auto rect = SystemApi::windowClientRect(hwnd());
+  setCursorPosition(rect.w/2,rect.h/2);
+  setCursorShape(fs ? CursorShape::Hidden : CursorShape::Arrow);
+  dMouse = Point();
+#endif
+  }
+
+void MainWindow::mouseDownEvent(MouseEvent &event) {
+  if(event.button<sizeof(mouseP))
+    mouseP[event.button]=true;
+  auto act     = keycodec.tr(event);
+  auto mapping = keycodec.mapping(event);
+  player.onKeyPressed(act,KeyEvent::K_NoKey,mapping);
+  }
+
+void MainWindow::mouseUpEvent(MouseEvent &event) {
+  auto act     = keycodec.tr(event);
+  auto mapping = keycodec.mapping(event);
+  player.onKeyReleased(act,mapping);
+  if(event.button<sizeof(mouseP))
+    mouseP[event.button]=false;
+  }
+
+void MainWindow::mouseDragEvent(MouseEvent &event) {
+  const bool fs = SystemApi::isFullscreen(hwnd());
+  if(!mouseP[Event::ButtonLeft] && !fs)
+    return;
+  if(player.focus().npc && !fs)
+    return;
+  processMouse(event,true);
+  }
+
+void MainWindow::mouseMoveEvent(MouseEvent &event) {
+  processMouse(event,SystemApi::isFullscreen(hwnd()));
+  }
+
+void MainWindow::processMouse(MouseEvent& event, bool enable) {
+  auto center = Point(w()/2,h()/2);
+  if(enable && event.pos()!=center && hasFocus()) {
+    dMouse += (event.pos()-center);
+    setCursorPosition(center);
+    }
+  }
+
+void MainWindow::tickMouse(uint64_t dt) {
+#if defined(__ANDROID__)
+  if(controllerConnected) {
+    dMouse = Point();
+    return;
+    }
+#endif
+  auto camera = Gothic::inst().camera();
+  if(dialogs.hasContent() || Gothic::inst().isPause() || camera==nullptr || camera->isCutscene()) {
+    dMouse = Point();
+    return;
+    }
+
+  const bool enableMouse = Gothic::inst().settingsGetI("GAME","enableMouse");
+  if(enableMouse==0) {
+    dMouse = Point();
+    return;
+    }
+
+  if(dMouse==Point())
+    return;
+
+  const bool  camLookaroundInverse = Gothic::inst().settingsGetI("GAME","camLookaroundInverse");
+  const float mouseSensitivity     = Gothic::inst().settingsGetF("GAME","mouseSensitivity")/MouseUtil::mouseSysSpeed();
+  PointF dpScaled = PointF(float(dMouse.x)*mouseSensitivity,float(dMouse.y)*mouseSensitivity);
+  dpScaled.x/=float(w());
+  dpScaled.y/=float(h());
+  if(camLookaroundInverse)
+    dpScaled.y *= -1.f;
+
+  static float mul = 270.f;
+  dpScaled *= mul;
+
+  static float psMax = 720.f;
+  const float  dtF   = float(dt)/1000.f;
+  dpScaled.x = std::clamp(dpScaled.x, -(psMax*dtF), psMax*dtF);
+  dpScaled.y = std::clamp(dpScaled.y, -(psMax*dtF), psMax*dtF);
+
+  // Log::d("mouse dMouse   = ", dMouse.x,   ", ", dMouse.y);
+  // Log::d("mouse dpScaled = ", dpScaled.x, ", ", dpScaled.y);
+
+  camera->onRotateMouse(PointF(dpScaled.y,-dpScaled.x));
+  if(!inventory.isActive()) {
+    player.onRotateMouse(-dpScaled.x, -dpScaled.y);
+    }
+
+  dMouse = Point();
+  }
+
+
+void MainWindow::applySystemWheelSelection(size_t selected,bool touch) {
+  const char* settings[]={"showFps",touch ? "touchControls" : "gamepadControls","centerPlayerBars","useGothic1Controls","vibration"};
+  if(selected>=std::size(settings)) return;
+  const auto section=selected==1 ? "DEBUG" : "GAME";
+  const auto setting=settings[selected];
+  Gothic::settingsSetI(section,setting,!Gothic::settingsGetI(section,setting));
+  Gothic::flushSettings();
+  Feedback::play(Feedback::Effect::Confirm);
+  }
+
+#if defined(__MOBILE_PLATFORM__)
+bool MainWindow::onTouchWheel(TouchInput::Command command, TouchInput::WheelPhase phase, Point pos) {
+  if(phase==TouchInput::WheelPhase::Begin) Feedback::setGamepad(false);
+  using Phase=TouchInput::WheelPhase;
+  auto& gothic=Gothic::inst();
+  auto pl=gothic.player();
+  if(phase==Phase::Begin) {
+    const auto camera=gothic.camera();
+    if(pl==nullptr || gothic.isPause() || gothic.checkLoading()!=Gothic::LoadState::Idle ||
+       camera==nullptr || camera->isCutscene() || pl->isDown() ||
+       video.isActive() || rootMenu.isActive() || chapter.isActive() || document.isActive() ||
+       dialogs.isActive() || inventory.isActive() || console.isActive())
+      return false;
+    player.clearInput();
+    touchHeldAction.reset();
+    touchTapRelease.reset();
+    touchMovementBlocked=true;
+    const auto kind=command==TouchInput::Command::Back ? InventoryMenu::WheelKind::System :
+                    (command==TouchInput::Command::Inventory ? InventoryMenu::WheelKind::Character : InventoryMenu::WheelKind::Equipment);
+    inventory.openWheel(*pl,kind);
+    if(!inventory.isWheelOpen()) return false;
+    touchWheelOwned=true;
+    inventory.beginTouchWheel(pos);
+    return true;
+    }
+  if(!touchWheelOwned) return false;
+  if(phase==Phase::Move) {
+    if(inventory.isWheelOpen()) inventory.touchWheelMove(pos,Application::tickCount());
+    return true;
+    }
+  const auto selected=inventory.isWheelOpen() ? inventory.wheelSelection() : size_t(-1);
+  if(inventory.isWheelOpen()) inventory.close();
+  touchWheelOwned=false;
+  player.clearInput();
+  touchMovementBlocked=true;
+  if(phase!=Phase::Apply || selected==size_t(-1) || pl==nullptr || pl->isDown() || gothic.isPause() ||
+     gothic.checkLoading()!=Gothic::LoadState::Idle || rootMenu.isActive() || video.isActive() ||
+     chapter.isActive() || document.isActive() || dialogs.isActive() || console.isActive()) return true;
+  if(command==TouchInput::Command::Weapon) {
+    Feedback::play(Feedback::Effect::Confirm);
+    player.controllerEquip(selected);
+    }
+  else if(command==TouchInput::Command::Back) {
+    applySystemWheelSelection(selected,true);
+    }
+  else {
+    const auto action=selected==0 ? KeyCodec::Status : KeyCodec::Log;
+    rootMenu.setMenu(selected==0 ? "MENU_STATUS" : "MENU_LOG",action);
+    rootMenu.setPlayer(*pl);
+    }
+  return true;
+  }
+
+void MainWindow::onTouchCommand(TouchInput::Command command, bool pressed) {
+  if(pressed) Feedback::setGamepad(false);
+  Event::KeyType key = Event::K_NoKey;
+  const bool uiActive = video.isActive() || rootMenu.isActive() || chapter.isActive() ||
+                        document.isActive() || dialogs.isActive() || inventory.isActive();
+  if(inventory.isOpen()==InventoryMenu::State::LockPicking && !rootMenu.isActive() && !dialogs.isActive()) {
+    // Lock turns are interaction actions, not inventory navigation or remappable keyboard keys.
+    if(pressed) {
+      auto action=KeyCodec::Idle;
+      if(command==TouchInput::Command::Left)
+        action=KeyCodec::Left;
+      else if(command==TouchInput::Command::Right)
+        action=KeyCodec::Right;
+      else if(command==TouchInput::Command::Back || command==TouchInput::Command::Down)
+        action=KeyCodec::Back;
+      if(action!=KeyCodec::Idle) {
+        player.onKeyPressed(action,Event::K_NoKey,KeyCodec::Mapping::Secondary);
+        // Picking is immediate; do not leave movement held when the chest opens or picking ends.
+        player.releaseControllerKey(action,true);
+        }
+      }
+    return;
+    }
+  if(command==TouchInput::Command::DeleteSave) {
+    if(pressed && rootMenu.canRequestDeleteSave() && !video.isActive() && !chapter.isActive() &&
+       !document.isActive() && !dialogs.isActive() && !inventory.isActive() && !console.isActive())
+      rootMenu.requestDeleteSave("Accept (bottom-right): delete    Back (top-right): cancel");
+    return;
+    }
+  if(command==TouchInput::Command::QuickSave || command==TouchInput::Command::QuickLoad) {
+    auto& gothic=Gothic::inst();
+    const auto camera=gothic.camera();
+    if(!pressed || uiActive || console.isActive() || gothic.isPause() || gothic.world()==nullptr ||
+       gothic.checkLoading()!=Gothic::LoadState::Idle || camera==nullptr || camera->isCutscene() ||
+       gothic.world()->isCutsceneLock() || !Gothic::settingsGetI("GAME","useQuickSaveKeys")) return;
+    if(command==TouchInput::Command::QuickSave) {
+      if(gothic.isInGameAndAlive()) gothic.quickSave();
+      }
+    else gothic.quickLoad();
+    return;
+    }
+  if(command==TouchInput::Command::SneakOn || command==TouchInput::Command::SneakOff ||
+     command==TouchInput::Command::FirstPerson || command==TouchInput::Command::LookBehind) {
+    auto camera=Gothic::inst().camera();
+    if(command==TouchInput::Command::LookBehind && !pressed) {
+      player.releaseControllerKey(KeyCodec::LookBack,true);
+      if(camera) camera->setLookBack(false);
+      return;
+      }
+    auto pl=Gothic::inst().player();
+    if(!pressed || uiActive || console.isActive() || Gothic::inst().isPause() || pl==nullptr || pl->isDown() ||
+       pl->interactive()!=nullptr || camera==nullptr || camera->isCutscene() ||
+       Gothic::inst().checkLoading()!=Gothic::LoadState::Idle) return;
+    if(command==TouchInput::Command::FirstPerson) camera->setFirstPerson(!camera->isFirstPerson());
+    else if(command==TouchInput::Command::LookBehind)
+      player.onKeyPressed(KeyCodec::LookBack,Event::K_NoKey,KeyCodec::Mapping::Secondary);
+    else player.setSneaking(command==TouchInput::Command::SneakOn);
+    return;
+    }
+  if(command==TouchInput::Command::HealthPotion || command==TouchInput::Command::ManaPotion) {
+    auto& gothic=Gothic::inst();
+    auto pl=gothic.player();
+    auto camera=gothic.camera();
+    if(!pressed || uiActive || console.isActive() || gothic.isPause() || pl==nullptr || pl->isDown() ||
+       camera==nullptr || camera->isCutscene() || gothic.checkLoading()!=Gothic::LoadState::Idle ||
+       gothic.world()->isCutsceneLock()) return;
+    if(command==TouchInput::Command::HealthPotion) gothic.world()->script().playerHotLameHeal(*pl);
+    else gothic.world()->script().playerHotLamePotion(*pl);
+    return;
+    }
+  if(command==TouchInput::Command::Block) {
+    if(!pressed)
+      player.controllerCombat(1,false);
+    else if(!uiActive && !Gothic::inst().isPause() && !player.isClassicCombat())
+      player.controllerCombat(1,true);
+    return;
+    }
+  if(command==TouchInput::Command::LockTarget) {
+    if(pressed && !uiActive && !Gothic::inst().isPause())
+      player.toggleTargetLock();
+    return;
+    }
+  if(command==TouchInput::Command::TapAccept) {
+    if(pressed && !uiActive && !Gothic::inst().isPause()) {
+      const auto pl=Gothic::inst().player();
+      if(pl!=nullptr && (pl->weaponState()==WeaponState::Bow || pl->weaponState()==WeaponState::CBow)) {
+        player.controllerCombat(0,true);
+        player.controllerCombat(0,false);
+        return;
+        }
+      KeyEvent event(Event::K_LControl,Event::M_NoModifier,Event::KeyDown);
+      touchTapRelease = KeyCodec::ActionMapping{keycodec.tr(event),keycodec.mapping(event)};
+      keyDownEvent(event);
+      }
+    return;
+    }
+  if(command==TouchInput::Command::Accept && !uiActive && !Gothic::inst().isPause()) {
+    const auto pl=Gothic::inst().player();
+    if(pl!=nullptr && (pl->weaponState()==WeaponState::Bow || pl->weaponState()==WeaponState::CBow)) {
+      player.controllerCombat(0,pressed);
+      return;
+      }
+    }
+  if(command==TouchInput::Command::Accept && !pressed && touchHeldAction) {
+    const auto pl=Gothic::inst().player();
+    // A short unarmed tap can press and release between ticks; let interaction consume it first.
+    if(!uiActive && pl!=nullptr && pl->weaponState()==WeaponState::NoWeapon)
+      touchTapRelease=touchHeldAction;
+    else
+      player.onKeyReleased(touchHeldAction->action,touchHeldAction->mapping);
+    touchHeldAction.reset();
+    return;
+    }
+  if(command==TouchInput::Command::Accept && !uiActive) {
+    // A suppressed hold must not release an action owned by another input device.
+    if(!pressed) return;
+    const auto pl=Gothic::inst().player();
+    const auto ws=pl!=nullptr ? pl->weaponState() : WeaponState::NoWeapon;
+    if(!player.isClassicCombat() && (ws==WeaponState::Fist || ws==WeaponState::W1H || ws==WeaponState::W2H) &&
+       player.focus().npc==nullptr)
+      return;
+    }
+  // Swimming uses analog movement and never turns stick directions into combat keys.
+  if(auto pl=Gothic::inst().player(); !uiActive && command<=TouchInput::Command::Right &&
+     pl!=nullptr && (pl->isSwim() || pl->isDive()))
+    return;
+  // Locked movement uses the analog stick, except for classic ACTION + direction attacks.
+  if(!uiActive && command<=TouchInput::Command::Right && player.lockedTarget()!=nullptr &&
+     !(player.isClassicCombat() && player.isPressed(KeyCodec::ActionGeneric)))
+    return;
+  // A direction held while closing a menu must return to neutral before moving the player.
+  if(!uiActive && touchMovementBlocked && pressed && command<=TouchInput::Command::Right)
+    return;
+  if(uiActive && !inventory.isActive() && (command==TouchInput::Command::Left || command==TouchInput::Command::Right)) {
+    if(pressed) controllerUiKey(command==TouchInput::Command::Right ? Event::K_Right : Event::K_Left,false,true);
+    return;
+    }
+  switch(command) {
+    case TouchInput::Command::Up:        key = Event::K_Up;       break;
+    case TouchInput::Command::Down:      key = Event::K_Down;     break;
+    case TouchInput::Command::Left:      key = Event::K_Left;     break;
+    case TouchInput::Command::Right:     key = Event::K_Right;    break;
+    case TouchInput::Command::Accept:    key = uiActive ? Event::K_Return : Event::K_LControl; break;
+    case TouchInput::Command::Back:      key = Event::K_ESCAPE;   break;
+    case TouchInput::Command::Jump:      key = Event::K_LAlt;     break;
+    case TouchInput::Command::Weapon:    key = Event::K_Space;    break;
+    case TouchInput::Command::Inventory: key = Event::K_Tab;      break;
+    case TouchInput::Command::LockTarget:
+    case TouchInput::Command::SneakOn:
+    case TouchInput::Command::SneakOff:
+    case TouchInput::Command::FirstPerson:
+    case TouchInput::Command::LookBehind:
+    case TouchInput::Command::QuickSave:
+    case TouchInput::Command::QuickLoad:
+    case TouchInput::Command::DeleteSave:
+    case TouchInput::Command::HealthPotion:
+    case TouchInput::Command::ManaPotion:
+    case TouchInput::Command::Block:
+    case TouchInput::Command::TapAccept: return;
+    }
+  KeyEvent event(key,Event::M_NoModifier,pressed ? Event::KeyDown : Event::KeyUp);
+  if(command==TouchInput::Command::Jump && !pressed && !uiActive && keycodec.tr(event)==KeyCodec::Jump) {
+    // Match gamepad Jump: consume a short tap before releasing it after the movement tick.
+    player.releaseControllerKey(KeyCodec::Jump);
+    return;
+    }
+  if(command==TouchInput::Command::Accept && pressed && !uiActive)
+    touchHeldAction = KeyCodec::ActionMapping{keycodec.tr(event),keycodec.mapping(event)};
+  if(pressed)
+    keyDownEvent(event); else
+    keyUpEvent(event);
+  }
+#endif
+
+void MainWindow::onSettings() {
+#if defined(__MOBILE_PLATFORM__)
+  mobileUi.setDebugOverlay(Gothic::settingsGetI("DEBUG", "touchControls")!=0);
+#if defined(__ANDROID__)
+  if(controllerConnected) mobileUi.setDebugOverlay(false);
+#endif
+#endif
+#if defined(__ANDROID__) && !defined(GOTHIC2VR_OPENXR)
+  const auto displayMode = Gothic::settingsGetS("VIDEO", "displayMode");
+  const bool requestHdr = displayMode!="sdr" &&
+      device.properties().hasAttachFormat(TextureFormat::RGBA16F) &&
+      device.properties().hasSamplerFormat(TextureFormat::RGBA16F);
+  if(requestHdr!=hdrRequested) {
+    device.waitIdle();
+    swapchain.setHdr(requestHdr);
+    hdrRequested = requestHdr;
+    }
+#endif
+  CpuTrace::setEnabled(Gothic::settingsGetI("DEBUG", "cpuProfile")!=0);
+  Feedback::setEnabled(Gothic::settingsGetI("GAME", "vibration")!=0);
+  const bool gpuProfiling = Gothic::settingsGetI("DEBUG", "gpuProfile")!=0;
+  if(profileGpu!=gpuProfiling) {
+    profileGpu = gpuProfiling;
+    gpuProfileFrames = 0;
+    gpuProfileAttempts = 0;
+    gpuProfileLog.close();
+    if(profileGpu) {
+      gpuProfileLog.clear();
+      gpuProfileLog.open("gpu-profile.csv",std::ios::trunc);
+      gpuProfileLog.imbue(std::locale::classic());
+      gpuProfileLog << "frame,pass,milliseconds\n" << std::fixed << std::setprecision(6);
+      gpuProfileLog.flush();
+      if(!gpuProfileLog)
+        Log::e("Unable to open gpu-profile.csv; GPU profiling disabled");
+      }
+    }
+#if defined(__ANDROID__)
+  const bool enabled = Gothic::settingsGetI("GAME", "showFps")!=0;
+  if(showFps!=enabled) {
+    showFps = enabled;
+    update();
+    }
+#endif
+  auto zMaxFps = Gothic::options().fpsLimit;
+  if(zMaxFps<=0)
+    zMaxFps = Gothic::inst().settingsGetI("ENGINE", "zMaxFps");
+#if defined(__ANDROID__)
+  maxFps = uint32_t(std::max(0,zMaxFps));
+#else
+  if(zMaxFps>0)
+    maxFpsInv = 1000u/uint64_t(zMaxFps); else
+    maxFpsInv = 0;
+#endif
+  }
+
+void MainWindow::mouseWheelEvent(MouseEvent &event) {
+  if(auto camera = Gothic::inst().camera())
+    camera->changeZoom(event.delta);
+  }
+
+void MainWindow::keyDownEvent(KeyEvent &event) {
+  if(video.isActive()){
+    event.accept();
+    video.keyDownEvent(event);
+    if(event.isAccepted()){
+      uiKeyUp=&video;
+      return;
+      }
+    }
+
+  if(rootMenu.isActive()) {
+    event.accept();
+    rootMenu.keyDownEvent(event);
+    if(event.isAccepted()){
+      uiKeyUp=&rootMenu;
+      return;
+      }
+    }
+
+  if(chapter.isActive()){
+    event.accept();
+    chapter.keyDownEvent(event);
+    if(event.isAccepted()){
+      uiKeyUp=&chapter;
+      return;
+      }
+    }
+
+  if(document.isActive()){
+    event.accept();
+    document.keyDownEvent(event);
+    if(event.isAccepted()){
+      uiKeyUp=&document;
+      return;
+      }
+    }
+
+  if(dialogs.isActive()){
+    event.accept();
+    dialogs.keyDownEvent(event);
+    if(event.isAccepted()){
+      uiKeyUp=&dialogs;
+      return;
+      }
+    }
+
+  if(inventory.isActive()){
+    event.accept();
+    inventory.keyDownEvent(event);
+    if(event.isAccepted()){
+      uiKeyUp=&inventory;
+      return;
+      }
+    }
+  uiKeyUp=nullptr;
+
+  auto act     = keycodec.tr(event);
+  auto mapping = keycodec.mapping(event);
+#if defined(__ANDROID__)
+  if(event.key==Event::K_Return)
+    act = KeyCodec::ActionGeneric;
+#endif
+  player.onKeyPressed(act,event.key,mapping);
+
+  if(event.key==Event::K_F11) {
+    auto tex = renderer.screenshoot(cmdId);
+    auto pm  = device.readPixels(textureCast<const Texture2d&>(tex));
+    pm.save("dbg.png");
+    }
+  event.accept();
+  }
+
+void MainWindow::keyRepeatEvent(KeyEvent& event) {
+  if(uiKeyUp==&video){
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&rootMenu){
+    rootMenu.keyRepeatEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&chapter){
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&document){
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&dialogs){
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&inventory){
+    inventory.keyRepeatEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+  }
+
+void MainWindow::keyUpEvent(KeyEvent &event) {
+  if(uiKeyUp==&video){
+    video.keyUpEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&rootMenu){
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&chapter){
+    chapter.keyUpEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&document){
+    document.keyUpEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&dialogs){
+    dialogs.keyUpEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+  if(uiKeyUp==&inventory){
+    inventory.keyUpEvent(event);
+    if(event.isAccepted())
+      return;
+    }
+
+
+  auto act     = keycodec.tr(event);
+  auto mapping = keycodec.mapping(event);
+#if defined(__ANDROID__)
+  if(event.key==Event::K_Return && uiKeyUp==nullptr)
+    act = KeyCodec::ActionGeneric;
+#endif
+
+  std::string_view menuEv;
+  if(act==KeyCodec::Escape)
+    menuEv = Gothic::inst().menuMain();
+  else if(act==KeyCodec::Log)
+    menuEv = "MENU_LOG";
+  else if(act==KeyCodec::Status)
+    menuEv = "MENU_STATUS";
+
+  if(!menuEv.empty()) {
+    rootMenu.setMenu(menuEv,act);
+    rootMenu.showVersion(act==KeyCodec::Escape);
+    if(auto pl = Gothic::inst().player())
+      rootMenu.setPlayer(*pl);
+    clearInput();
+    }
+  else if(act==KeyCodec::Inventory && !dialogs.isActive()) {
+    if(inventory.isActive()) {
+      inventory.close();
+      } else {
+      auto pl = Gothic::inst().player();
+      if(pl!=nullptr)
+        inventory.open(*pl);
+      }
+    clearInput();
+    }
+  player.onKeyReleased(act, mapping);
+  }
+
+void MainWindow::focusEvent(FocusEvent &event) {
+#if defined(__ANDROID__)
+  framePacer.reset();
+  controllerFocused=event.in;
+  if(!event.in) {
+    clearInput();
+    controllerBindings.reset(controllerButtons);
+    if(inventory.isWheelOpen()) inventory.close();
+    wheelHeldMask=0;
+    }
+#endif
+  if(!event.in)
+    return;
+  dMouse = Point();
+  auto center = Point(w()/2,h()/2);
+  setCursorPosition(center);
+  }
+
+void MainWindow::paintFocus(Painter& p, const Focus& focus, const Matrix4x4& vp) {
+  if(!focus || dialogs.isActive())
+    return;
+
+  const float scale = Gothic::interfaceScale(this);
+  auto        world = Gothic::inst().world();
+  auto        pl    = world==nullptr ? nullptr : world->player();
+  if(pl==nullptr)
+    return;
+
+  auto pw  = 1.f;
+  auto pos = focus.displayPosition();
+  vp.project(pos.x,pos.y,pos.z,pw);
+
+  if(pw<=0.f)
+    return;
+
+  pos /= pw;
+
+  int   ix  = int((0.5f*pos.x+0.5f)*float(w()));
+  int   iy  = int((0.5f*pos.y+0.5f)*float(h()));
+  auto& fnt = Resources::font(scale);
+
+  const bool locked=focus.npc!=nullptr && player.lockedTarget()==focus.npc;
+  string_frm name(focus.displayName(),locked?" (locked)":"");
+  auto tsize = fnt.textSize(name);
+  ix-=tsize.w/2;
+  if(iy<tsize.h)
+    iy = tsize.h;
+  if(iy>h())
+    iy = h();
+  fnt.drawText(p,ix,iy,name);
+
+#if !defined(GOTHIC2VR_OPENXR)
+  if(focus.npc!=nullptr && !focus.npc->isDead()) {
+    float hp = float(focus.npc->attribute(ATR_HITPOINTS))/float(focus.npc->attribute(ATR_HITPOINTSMAX));
+    drawBar(p,barHp, w()/2,10, hp, AlignHCenter|AlignTop);
+    }
+
+#endif
+  const int foc = Gothic::settingsGetI("GAME","highlightMeleeFocus");
+  if(focus.npc!=nullptr  &&
+     (foc==1 || foc==3) &&
+     player.isPressed(KeyCodec::ActionGeneric) &&
+     pl->weaponState()!=WeaponState::NoWeapon &&
+     pl->weaponState()!=WeaponState::Fist) {
+    auto tr = vp;
+    tr.mul(focus.npc->transform());
+
+    const auto b    = focus.npc->bounds();
+    const auto bbox = b.bbox; //focus.npc->bBox();
+
+    Vec3 bx[] = {
+      {bbox[0].x, bbox[0].y, bbox[0].z},
+      {bbox[1].x, bbox[0].y, bbox[0].z},
+      {bbox[1].x, bbox[1].y, bbox[0].z},
+      {bbox[0].x, bbox[1].y, bbox[0].z},
+      {bbox[0].x, bbox[0].y, bbox[1].z},
+      {bbox[1].x, bbox[0].y, bbox[1].z},
+      {bbox[1].x, bbox[1].y, bbox[1].z},
+      {bbox[0].x, bbox[1].y, bbox[1].z},
+      };
+
+    int min[2]={ix,iy-20}, max[2]={ix,iy-20};
+    for(int i=0; i<8; ++i) {
+      tr.project(bx[i]);
+      int x = int((bx[i].x*0.5f+0.5f)*float(w()));
+      int y = int((bx[i].y*0.5f+0.5f)*float(h()));
+      min[0] = std::min(x,min[0]);
+      min[1] = std::min(y,min[1]);
+      max[0] = std::max(x,max[0]);
+      max[1] = std::max(y,max[1]);
+      }
+
+    paintFocus(p,Rect(min[0],min[1],max[0]-min[0],max[1]-min[1]));
+    }
+
+  // focusImg
+  /*
+  if(auto pl = focus.interactive){
+    pl->marchInteractives(p,vp,w(),h());
+    }*/
+  }
+
+void MainWindow::paintFocus(Painter& p, Rect rect) {
+  if(focusImg==nullptr)
+    return;
+  const int w2 = focusImg->w();
+  const int h2 = focusImg->h();
+  const int w  = w2/2;
+  const int h  = h2/2;
+
+  if(rect.w<w) {
+    int dw = w-rect.w;
+    rect.x -= dw/2;
+    rect.w += dw;
+    }
+  if(rect.h<h) {
+    int dh = h-rect.h;
+    rect.y -= dh/2;
+    rect.h += dh;
+    }
+
+  p.setBrush(Brush(*focusImg,Painter::Add));
+  p.drawRect(rect.x,         rect.y,         w,h, 0,0, w, h);
+  p.drawRect(rect.x+rect.w-w,rect.y,         w,h, w,0, w2,h);
+  p.drawRect(rect.x,         rect.y+rect.h-h,w,h, 0,h, w, h2);
+  p.drawRect(rect.x+rect.w-w,rect.y+rect.h-h,w,h, w,h, w2,h2);
+  }
+
+Size MainWindow::playerBarSize() const {
+  if(barBack==nullptr)
+    return Size();
+  const float scale = Gothic::interfaceScale(this);
+  const float width = 200.f*scale*float(std::min(w(),800))/800.f;
+  const float height = float(barBack->h())*width/float(std::max(barBack->w(),1));
+  return Size(int(width),int(height));
+  }
+
+void MainWindow::drawBar(Painter &p, const Tempest::Texture2d* bar, int x, int y, float v, AlignFlag flg) {
+  if(barBack==nullptr || bar==nullptr)
+    return;
+  const float scale   = Gothic::interfaceScale(this);
+  const float destW   = 200.f*scale*float(std::min(w(),800))/800.f;
+  const float k       = float(destW)/float(std::max(barBack->w(),1));
+  const float destH   = float(barBack->h())*k;
+  const float destHin = float(destH)*24.f/32.f;
+  //const float destHin = 20;//float(destH)*24.f/32.f;
+
+  v = std::max(0.f,std::min(v,1.f));
+  if(flg & AlignRight)
+    x-=int(destW);
+  else if(flg & AlignHCenter)
+    x-=int(destW)/2;
+  if(flg & AlignBottom)
+    y-=int(destH);
+
+  p.setBrush(*barBack);
+  p.drawRect(x,y,int(destW),int(destH), 0,0,barBack->w(),barBack->h());
+
+  int   dy = int(0.5f*(destH-destHin));
+  float pd = 9.f*k;
+  p.setBrush(*bar);
+  p.drawRect(x+int(pd),y+dy,int(float(destW-pd*2)*v),int(destHin),
+             0,0,bar->w(),bar->h());
+  }
+
+void MainWindow::drawMsg(Tempest::Painter& p) {
+  if(barBack==nullptr)
+    return;
+  const float scale   = Gothic::interfaceScale(this);
+  const float destW   = 200.f*scale*float(std::min(w(),800))/800.f;
+  const float k       = float(destW)/float(std::max(barBack->w(),1));
+  const float destH   = float(barBack->h())*k;
+
+  const int y = 10 + int(destH) + 10;
+  dialogs.drawMsg(p, y);
+  }
+
+void MainWindow::drawProgress(Painter &p, int x, int y, int w, int h, float v) {
+  if(v<0.1f)
+    v=0.1f;
+  p.setBrush(*loadBox);
+  p.drawRect(x,y,w,h, 0,0,loadBox->w(),loadBox->h());
+
+  int paddL = int((float(w)*75.f)/float(loadBox->w()));
+  int paddT = int((float(h)*10.f)/float(loadBox->h()));
+
+  if(Gothic::inst().version().game==1) {
+    paddL = int((float(w)*30.f)/float(loadBox->w()));
+    paddT = int((float(h)* 5.f)/float(loadBox->h()));
+    }
+
+  p.setBrush(*loadVal);
+  p.drawRect(x+paddL,y+paddT,int(float(w-2*paddL)*v),h-2*paddT,
+             0,0,loadVal->w(),loadVal->h());
+  }
+
+void MainWindow::drawLoading(Painter &p, int x, int y, int w, int h) {
+  float v = float(Gothic::inst().loadingProgress())/100.f;
+  drawProgress(p,x,y,w,h,v);
+  }
+
+void MainWindow::drawSaving(Painter &p) {
+  if(auto back = Gothic::inst().loadingBanner()) {
+    p.setBrush(Brush(*back,Painter::NoBlend));
+    p.drawRect(0,0,this->w(),this->h(),
+               0,0,back->w(),back->h());
+    }
+
+  if(saveback==nullptr)
+    saveback = Resources::loadTexture("SAVING.TGA");
+  if(saveback==nullptr)
+    return;
+
+  const float scale = Gothic::interfaceScale(this);
+  int         szX   = Gothic::options().saveGameImageSize.w;
+  int         szY   = Gothic::options().saveGameImageSize.h;
+
+  if(szX<=460 || szY<=300) {
+    // way too small otherwise
+    szX = 460;
+    szY = 300;
+    }
+  szX = int(float(szX)*scale);
+  szY = int(float(szY)*scale);
+  drawSaving(p,*saveback,szX,szY,scale);
+  }
+
+void MainWindow::drawSaving(Painter& p, const Tempest::Texture2d& back, int sw, int sh, float scale) {
+  const int x = (w()-sw)/2, y = (h()-sh)/2;
+
+  // SAVING.TGA is semi-transparent image with the idea to accomulate alpha over time
+  // ... for loop for now
+  p.setBrush(back);
+  for(int i=0;i<10;++i) {
+    p.drawRect(x,y,sw,sh, 0,0,back.w(),back.h());
+    }
+
+  float v = float(Gothic::inst().loadingProgress())/100.f;
+  drawProgress(p, x+int(100.f*scale), y+sh-int(75.f*scale), sw-2*int(100.f*scale), int(40.f*scale), v);
+  }
+
+void MainWindow::isDialogClosed(bool& ret) {
+  ret = !(dialogs.isActive() || document.isActive());
+  }
+
+template<Tempest::KeyEvent::KeyType k>
+void MainWindow::onMarvinKey() {
+  switch(k) {
+    case Event::K_F2:
+      if(Gothic::inst().isMarvinEnabled()) {
+        console.resize(w(),h());
+        console.setFocus(true);
+        console.exec();
+        }
+      break;
+    case Event::K_F3:
+      setFullscreen(!SystemApi::isFullscreen(hwnd()));
+      break;
+    case Event::K_F4:
+      if(Gothic::inst().isMarvinEnabled()) {
+        auto camera = Gothic::inst().camera();
+        auto pl = Gothic::inst().player();
+        if(camera!=nullptr && pl!=nullptr) {
+          camera->setMarvinMode(Camera::M_Normal);
+          camera->reset(pl);
+          }
+        }
+      break;
+    case Event::K_F5: {
+      const bool useQuickSaveKeys = Gothic::settingsGetI("GAME", "useQuickSaveKeys")!=0;
+#ifdef NDEBUG
+      const bool debug = false;
+#else
+      const bool debug = true;
+#endif
+      if(!debug && Gothic::inst().isMarvinEnabled() && !dialogs.isActive()) {
+        if(auto camera = Gothic::inst().camera()) {
+          camera->setMarvinMode(Camera::M_Freeze);
+          }
+        }
+      else if(Gothic::inst().isInGameAndAlive() && !Gothic::inst().isPause() && useQuickSaveKeys) {
+        Gothic::inst().quickSave();
+        }
+      break;
+      }
+
+    case Event::K_F6:
+      if(Gothic::inst().isMarvinEnabled() && !dialogs.isActive()) {
+        auto camera = Gothic::inst().camera();
+        auto pl     = Gothic::inst().player();
+        auto inter  = pl!=nullptr ? pl->interactive() : nullptr;
+        if(camera!=nullptr && inter==nullptr)
+          camera->setMarvinMode(Camera::M_Free);
+        }
+      break;
+    case Event::K_F7:
+      if(Gothic::inst().isMarvinEnabled() && !dialogs.isActive()) {
+        if(auto camera = Gothic::inst().camera()) {
+          camera->setMarvinMode(Camera::M_Pinned);
+          }
+        }
+      break;
+    case Event::K_F8:
+      //player.marvinF8();
+      break;
+
+    case Event::K_F9: {
+      const bool useQuickSaveKeys = Gothic::settingsGetI("GAME", "useQuickSaveKeys")!=0;
+      if(Gothic::inst().isMarvinEnabled()) {
+        if(runtimeMode==R_Normal)
+          runtimeMode = R_Suspended; else
+          runtimeMode = R_Normal;
+        }
+      else if(!Gothic::inst().isPause() && useQuickSaveKeys) {
+        Gothic::inst().quickLoad();
+        }
+      break;
+      }
+    case Event::K_F10:
+      if(runtimeMode==R_Suspended)
+        runtimeMode = R_Step;
+      break;
+    case Event::K_P:
+      if(Gothic::inst().isMarvinEnabled()) {
+        if(auto p = Gothic::inst().player()) {
+          auto pos = p->position();
+          string_frm buf("Position: ", pos.x,'/',pos.y,'/',pos.z);
+          Gothic::inst().onPrint(buf);
+          }
+        }
+      break;
+    }
+  }
+
+uint64_t MainWindow::tick() {
+  auto time = Application::tickCount();
+  auto dt   = time-lastTick;
+  // NOTE: limit to ~200 FPS in game logic to avoid math issues
+  if(dt<5)
+    return 0;
+  lastTick  = time;
+
+  auto st = Gothic::inst().checkLoading();
+  if(st==Gothic::LoadState::Finalize || st==Gothic::LoadState::FailedLoad || st==Gothic::LoadState::FailedSave) {
+    Gothic::inst().finishLoading();
+    if(st==Gothic::LoadState::FailedLoad)
+      rootMenu.setMainMenu();
+    if(st==Gothic::LoadState::FailedSave)
+      Gothic::inst().onPrint("unable to write savegame file");
+    return 0;
+    }
+  else if(st!=Gothic::LoadState::Idle) {
+    if(st==Gothic::LoadState::Loading)
+      GameMusic::inst().setMusic(GameMusic::SysLoading); else
+      rootMenu.processMusicTheme();
+    return 0;
+    }
+
+  video.tick();
+  if(video.isActive())
+    return 0;
+
+  if(Gothic::inst().isPause()) {
+    return 0;
+    }
+
+  if(dt>50)
+    dt=50;
+
+  if(runtimeMode==R_Step) {
+    runtimeMode = R_Suspended;
+    dt = 1000/60; //60 fps
+    }
+  else if(runtimeMode==R_Suspended) {
+    auto camera = Gothic::inst().camera();
+    if(camera!=nullptr && camera->isFree()) {
+      tickMouse(dt);
+      }
+    update();
+    return 0;
+    }
+
+  dialogs.tick(dt);
+  inventory.tick(dt);
+  Gothic::inst().tick(dt);
+  player.tickFocus();
+
+  if(dialogs.isActive())
+    ;//clearInput();
+  if(document.isActive())
+    clearInput();
+  tickMouse(dt);
+  player.tickMove(dt);
+#if defined(__MOBILE_PLATFORM__)
+  // A quick gesture tap must survive one simulation tick before releasing the action.
+  if(touchTapRelease) {
+    player.onKeyReleased(touchTapRelease->action,touchTapRelease->mapping);
+    touchTapRelease.reset();
+    }
+#endif
+  update();
+  return dt;
+  }
+
+void MainWindow::updateAnimation(uint64_t dt) {
+  Gothic::inst().updateAnimation(dt);
+  }
+
+void MainWindow::tickCamera(uint64_t dt) {
+  auto pcamera = Gothic::inst().camera();
+  auto pl      = Gothic::inst().player();
+  if(pcamera==nullptr)
+    return;
+
+  auto&      camera       = *pcamera;
+  const auto ws           = pl!=nullptr ? pl->weaponState() : WeaponState::NoWeapon;
+  const bool meleeFocus   = (ws==WeaponState::Fist ||
+                             ws==WeaponState::W1H  ||
+                             ws==WeaponState::W2H);
+  auto       pos          = pl!=nullptr ? pl->cameraBone(camera.isFirstPerson()) : Vec3();
+
+  if(!camera.isCutscene() && !camera.isFree()) {
+    const bool fs = SystemApi::isFullscreen(hwnd());
+    if(!fs && mouseP[Event::ButtonLeft]) {
+      camera.setSpin(camera.spin());
+      camera.setTarget(pos);
+      }
+    else if(dialogs.isActive() && !dialogs.isMobsiDialog()) {
+      dialogs.dialogCamera(camera);
+      }
+    else if(inventory.isActive()) {
+      camera.setTarget(pos);
+      }
+#if defined(__ANDROID__)
+    // Both Android input paths own camera yaw; do not overwrite touch look with character facing.
+    else if(pl!=nullptr && pl->interactive()==nullptr && !pl->isDown()) {
+      camera.setTarget(pos);
+      }
+#endif
+    else if(player.focus().npc!=nullptr && meleeFocus && pl!=nullptr) {
+      auto spin = camera.spin();
+      spin.y = pl->rotation();
+      camera.setSpin(spin);
+      camera.setTarget(pos);
+      }
+    else if(pl!=nullptr && !camera.isFree()) {
+      auto spin = camera.spin();
+      if(pl->interactive()==nullptr && !pl->isDown())
+        spin.y = pl->rotation();
+      if(pl->isDive() && !camera.isMarvin())
+        spin.x = -pl->rotationY();
+      camera.setSpin(spin);
+      camera.setTarget(pos);
+      }
+    }
+
+  if(dt==0)
+    return;
+  if(camera.isToggleEnabled() && !camera.isCutscene())
+    camera.setMode(solveCameraMode());
+  camera.tick(dt);
+  }
+
+Camera::Mode MainWindow::solveCameraMode() const {
+  const auto camera = Gothic::inst().camera();
+  if(camera!=nullptr && camera->isFree())
+    return Camera::Normal;
+
+  if(dialogs.isActive())
+    return Camera::Dialog;
+
+  if(camera!=nullptr && camera->isFirstPerson())
+    return Camera::FirstPerson;
+
+  if((inventory.isOpen()==InventoryMenu::State::Equip ||
+      inventory.isOpen()==InventoryMenu::State::Ransack)
+#if defined(__ANDROID__)
+     && !inventory.isWheelOpen()
+#endif
+     )
+    return Camera::Inventory;
+
+  if(auto pl=Gothic::inst().player()) {
+    if(pl->interactive()!=nullptr)
+      return Camera::Mobsi;
+    }
+
+  if(auto pl = Gothic::inst().player()) {
+    if(pl->isDead())
+      return Camera::Death;
+    if(pl->isDive())
+      return Camera::Dive;
+    if(pl->isSwim())
+      return Camera::Swim;
+    if(pl->isFallingDeep())
+      return Camera::Fall;
+    bool g2 = Gothic::inst().version().game==2;
+    switch(pl->weaponState()){
+      case WeaponState::Fist:
+      case WeaponState::W1H:
+      case WeaponState::W2H:
+        return Camera::Melee;
+      case WeaponState::Bow:
+      case WeaponState::CBow:
+        return g2 ? Camera::Ranged : Camera::Normal;
+      case WeaponState::Mage:
+        return g2 ? Camera::Ranged : Camera::Melee;
+      case WeaponState::NoWeapon:
+        return Camera::Normal;
+      }
+    }
+
+  return Camera::Normal;
+  }
+
+void MainWindow::startGame(std::string_view slot) {
+  // gothic.emitGlobalSound(gothic.loadSoundFx("NEWGAME"));
+
+  if(Gothic::inst().checkLoading()==Gothic::LoadState::Idle){
+    setGameImpl(nullptr);
+    }
+
+  Gothic::inst().startLoad("LOADING.TGA",[slot=std::string(slot)](std::unique_ptr<GameSession>&& game){
+    game = nullptr; // clear world-memory now
+    std::unique_ptr<GameSession> w(new GameSession(slot));
+    return w;
+    });
+
+  background = Texture2d();
+  update();
+  }
+
+void MainWindow::loadGame(std::string_view slot) {
+  if(Gothic::inst().checkLoading()==Gothic::LoadState::Idle) {
+    setGameImpl(nullptr);
+    }
+
+  Gothic::inst().setBenchmarkMode(Benchmark::None);
+  Gothic::inst().startLoad("LOADING.TGA",[slot=std::string(slot)](std::unique_ptr<GameSession>&& game){
+    game = nullptr; // clear world-memory now
+    Tempest::RFile file(slot);
+    Serialize      s(file);
+    std::unique_ptr<GameSession> w(new GameSession(s));
+    return w;
+    });
+
+  background = Texture2d();
+  update();
+  }
+
+void MainWindow::saveGame(std::string_view slot, std::string_view name) {
+  if(!Gothic::inst().isInGameAndAlive())
+    return;
+  if(dialogs.isActive())
+    return;
+  if(auto w = Gothic::inst().world(); w!=nullptr && w->currentCs()!=nullptr)
+    return;
+
+  auto tex  = renderer.screenshoot(cmdId);
+  auto lres = Attachment();
+
+  static int32_t kThumbW = 800;
+  const  int32_t kThumbH = tex.w()>0 ? int32_t((tex.h() * kThumbW) / tex.w()) : 0;
+  if(kThumbW>0 && kThumbH>0 && kThumbW<tex.w() && kThumbH<tex.h()) {
+    lres = device.attachment(Tempest::TextureFormat::RGBA8, uint32_t(kThumbW), uint32_t(kThumbH));
+    }
+
+  if(!lres.isEmpty()) {
+    // reduce size of the save entry preview screenshot for faster save & load
+    CommandBuffer cmd;
+    {
+    auto enc = cmd.startEncoding(device);
+    enc.setDebugMarker("Downscale screenhoot");
+    enc.setFramebuffer({{lres, Vec4(), Tempest::Preserve}});
+    enc.setPushData(IVec2(lres.w(), lres.h()));
+    enc.setBinding(0, tex, Sampler::nearest());
+    enc.setPipeline(Shaders::inst().downscale);
+    enc.draw(nullptr, 0, 3);
+    }
+    auto sync = device.submit(cmd);
+    sync.wait();
+    }
+
+  auto& thumb = lres.isEmpty() ? tex : lres;
+  auto  pm    = device.readPixels(textureCast<const Texture2d&>(thumb));
+
+  Gothic::inst().startSave(std::move(textureCast<Texture2d&>(tex)),[slot=std::string(slot),name=std::string(name),pm](std::unique_ptr<GameSession>&& game){
+    if(!game)
+      return std::move(game);
+
+    Tempest::WFile f(slot);
+    Serialize      s(f);
+    game->save(s,name,pm);
+
+    // no print yet, because threading
+    // gothic.print("Game saved");
+    return std::move(game);
+    });
+
+  update();
+  }
+
+void MainWindow::onVideo(std::string_view fname) {
+  if(Gothic::inst().isBenchmarkMode())
+    return;
+  video.pushVideo(fname);
+  }
+
+void MainWindow::onStartLoading() {
+#if defined(__ANDROID__)
+  framePacer.reset();
+#endif
+  player   .clearInput();
+  inventory.onWorldChanged();
+  dialogs  .onWorldChanged();
+  }
+
+void MainWindow::onWorldLoaded() {
+#if defined(__ANDROID__)
+  framePacer.reset();
+#endif
+  dMouse = Point();
+
+  if(Gothic::inst().isBenchmarkMode()) {
+    if(auto world = Gothic::inst().world()) {
+      const TriggerEvent evt("TIMEDEMO","",world->tickCount(),TriggerEvent::T_Trigger);
+      world->execTriggerEvent(evt);
+      }
+    benchmark.clear();
+    }
+
+  player   .clearInput();
+  inventory.onWorldChanged();
+  dialogs  .onWorldChanged();
+
+  device.waitIdle();
+  for(auto& c:commands)
+    c = device.commandBuffer();
+
+  if(auto c = Gothic::inst().camera())
+    c->setViewport(uint32_t(w()),uint32_t(h()));
+
+  renderer.onWorldChanged();
+
+  if(auto pl = Gothic::inst().player())
+    rootMenu.setPlayer(*pl);
+
+  if(auto pl = Gothic::inst().player())
+    pl->multSpeed(1.f);
+  lastTick = Application::tickCount();
+  player.clearFocus();
+  }
+
+void MainWindow::onSessionExit() {
+  rootMenu.setMainMenu();
+  }
+
+void MainWindow::onBenchmarkFinished() {
+  if(benchmark.numFrames==0)
+    return;
+
+  double fps  = benchmark.fpsSum/double(benchmark.numFrames);
+  double low1 = 0;
+  size_t num1 = 0;
+  for(size_t i=0; i<benchmark.low1procent.size(); ++i) {
+    auto v = benchmark.low1procent[i];
+    if(v<=0)
+      continue;
+    low1 += 1000.0/double(v);
+    num1 += 1;
+    }
+  low1 = num1>0 ? low1/double(num1) : 0.0;
+  benchmark.clear();
+
+  string_frm str("Benchmark: low 1% = ", low1, " fps = ", fps);
+  Log::i(str.c_str());
+  console.printLine(str);
+
+  if(Gothic::inst().isBenchmarkModeCi()) {
+    Log::i("Exiting benchmark");
+    Tempest::SystemApi::exit();
+    return;
+    }
+
+  console.setFocus(true);
+  console.exec();
+  }
+
+void MainWindow::setGameImpl(std::unique_ptr<GameSession> &&w) {
+  // clear pointers to outdated game-state
+  inventory.onWorldChanged();
+  dialogs  .onWorldChanged();
+  Gothic::inst().setGame(std::move(w));
+  }
+
+void MainWindow::clearInput() {
+  player.clearInput();
+  std::memset(mouseP,0,sizeof(mouseP));
+  }
+
+void MainWindow::setFullscreen(bool fs) {
+  SystemApi::setAsFullscreen(hwnd(),fs);
+  }
+
+void MainWindow::render(){
+#if defined(GOTHIC2VR_OPENXR)
+  renderVr();
+#else
+  CpuTrace frameTrace("OpenGothic::frame");
+  try {
+    baseline.poll();
+    static uint64_t time=Application::tickCount();
+
+    static bool once=true;
+    if(once) {
+      Gothic::inst().emitGlobalSoundWav("GAMESTART.WAV");
+      once=false;
+      }
+
+    if(T_UNLIKELY(Gothic::inst().isBenchmarkModeCi())) {
+      const auto st = Gothic::inst().checkLoading();
+      if(st==Gothic::LoadState::Loading) {
+        // skip loading frames in benchmark-ci mode, for sake of easier tooling
+        return;
+        }
+      }
+
+#if defined(__ANDROID__)
+    const bool menuFrame = !Gothic::inst().isInGame() && !video.isActive();
+    const uint32_t targetFps = menuFrame ? (maxFps==0 ? 60 : std::min(maxFps,60u)) : maxFps;
+    framePacer.setFrameRate(Gothic::inst().isBenchmarkModeCi() ? 0 : targetFps);
+    framePacer.wait();
+#endif
+
+    /*
+      Note: game update goes first
+      once player position is updated, animation bones(cameraBone in particular) can be updated
+      lastly - camera position
+      */
+    uint64_t dt;
+    {
+    CpuTrace trace("OpenGothic::simulation");
+    dt = tick();
+    }
+    {
+    CpuTrace trace("OpenGothic::animation");
+    updateAnimation(dt);
+    }
+    {
+    CpuTrace trace("OpenGothic::camera");
+    tickCamera(dt);
+    }
+
+    auto& sync = fence[cmdId];
+    bool ready;
+    {
+    CpuTrace trace("OpenGothic::frame fence");
+    ready = sync.wait(0);
+    }
+    if(!ready) {
+      CpuTrace trace("OpenGothic::skipped frame");
+      // GPU rendering is not done, pass to next frame
+      std::this_thread::yield();
+      return;
+      }
+    Resources::resetRecycled(cmdId);
+
+    {
+    CpuTrace trace("OpenGothic::UI");
+    bool refreshFps = false;
+#if defined(__ANDROID__)
+    refreshFps = showFps && Application::tickCount()-fpsOverlayUpdated >= 250;
+#endif
+    if(video.isActive()) {
+      video.paint(device,cmdId);
+      uiLayer.clear();
+      PaintEvent p(uiLayer,atlas,this->w(),this->h());
+      video.paintEvent(p);
+      }
+    else if(needToUpdate() || refreshFps || Gothic::inst().checkLoading()!=Gothic::LoadState::Idle) {
+#if defined(__ANDROID__)
+      char fpsText[32] = {};
+      std::snprintf(fpsText,sizeof(fpsText),"%.0f FPS",fps.get());
+      const float fpsDensity = std::max(uiScale(),1.f);
+      const int fpsMargin = int(16.f*fpsDensity);
+      const auto& fpsFont = Resources::font(fpsDensity);
+      // Reserve three digits so ordinary FPS changes do not shift the debug legend.
+      const int fpsWidth = std::max(fpsFont.textSize("999 FPS").w,fpsFont.textSize(fpsText).w);
+      const auto overlaySafeArea=safeArea();
+      mobileUi.setDebugSafeArea(overlaySafeArea);
+      mobileUi.setDebugLeftInset(showFps ? fpsMargin+fpsWidth : 0);
+#endif
+      dispatchPaintEvent(uiLayer,atlas);
+
+      numOverlay.clear();
+      PaintEvent p(numOverlay,atlas,this->w(),this->h());
+      inventory.paintNumOverlay(p);
+#if defined(__ANDROID__)
+      paintControllerOverlay(p,showFps ? fpsMargin+fpsFont.pixelSize() : 0);
+      if(showFps) {
+        // Draw above menus and scale the padding with the interface.
+        Painter painter(p);
+        auto& font = Resources::font(fpsDensity);
+        font.drawText(painter,overlaySafeArea.x+fpsMargin,overlaySafeArea.y+fpsMargin+font.pixelSize(),fpsText);
+        fpsOverlayUpdated = Application::tickCount();
+        }
+#endif
+      }
+    uiMesh [cmdId].update(device,uiLayer);
+    numMesh[cmdId].update(device,numOverlay);
+    }
+
+    CommandBuffer& cmd = commands[cmdId];
+    // This slot's normal submission fence has completed above.
+    // Read timestamps before startEncoding resets the previous recording.
+    if(profileGpu && gpuProfileLog.is_open() && gpuProfileFrames<600) {
+      const auto timings = cmd.gpuTimings();
+      if(!timings.empty()) {
+        for(const auto& timing:timings) {
+          gpuProfileLog << gpuProfileFrames << ",\"";
+          for(char c:timing.name) {
+            if(c=='\"')
+              gpuProfileLog << '\"';
+            gpuProfileLog << c;
+            }
+          gpuProfileLog << "\"," << timing.milliseconds << '\n';
+          }
+        ++gpuProfileFrames;
+        if(gpuProfileFrames%120==0)
+          gpuProfileLog.flush();
+        }
+      if(gpuProfileFrames==600 || gpuProfileAttempts>=1200) {
+        gpuProfileLog.close();
+        Log::i("GPU profile complete: ",gpuProfileFrames," frames in gpu-profile.csv");
+        }
+      }
+    const bool captureGpu = profileGpu && gpuProfileLog.is_open() && bool(gpuProfileLog) &&
+                            gpuProfileFrames<600 && gpuProfileAttempts<1200 &&
+                            Gothic::inst().isInGame() &&
+                            Gothic::inst().checkLoading()==Gothic::LoadState::Idle && !video.isActive();
+    if(captureGpu)
+      ++gpuProfileAttempts;
+    {
+    CpuTrace trace("OpenGothic::record");
+    auto enc = cmd.startEncoding(device,captureGpu);
+    renderer.draw(swapchain[swapchain.currentImage()],enc,cmdId,uiMesh[cmdId],numMesh[cmdId],inventory,video,
+                  swapchain.hdrMaxLuminance());
+    }
+    {
+    CpuTrace trace("OpenGothic::submit");
+    sync = device.submit(cmd);
+    }
+    {
+    CpuTrace trace("OpenGothic::present");
+    device.present(swapchain);
+    }
+    baseline.afterFrame(!video.isActive() && !dialogs.isActive(), video.isActive(), dt,
+                        dialogs.diagnosticPhraseMs(), dialogs.diagnosticChoiceCount(), player, [this] {
+      device.waitIdle();
+      auto texture = renderer.screenshoot(cmdId);
+      auto pixels = device.readPixels(textureCast<const Texture2d&>(texture));
+      if(pixels.w()<64 || pixels.h()<64)
+        throw std::runtime_error("baseline capture is not a full world image");
+      pixels.save("baseline-smoke.png");
+      });
+    cmdId = (cmdId+1u)%Resources::MaxFramesInFlight;
+
+    auto t = Application::tickCount();
+#if !defined(__ANDROID__)
+    if(t-time<16 && !Gothic::inst().isInGame() && !video.isActive()) {
+      uint32_t delay = uint32_t(16-(t-time));
+      Application::sleep(delay);
+      t += delay;
+      }
+    else if(maxFpsInv>0 && t-time<maxFpsInv) {
+      uint32_t delay = uint32_t(maxFpsInv-(t-time));
+      Application::sleep(delay);
+      t += delay;
+      }
+#endif
+    fps.push(t-time);
+    if(Gothic::inst().isBenchmarkMode() && Gothic::inst().world()!=nullptr && Gothic::inst().world()->currentCs()!=nullptr)
+      benchmark.push(t-time);
+    time = t;
+    }
+  catch(const Tempest::SwapchainSuboptimal&) {
+    Log::e("swapchain is outdated - reset renderer");
+    device.waitIdle();
+    swapchain.reset();
+    }
+#endif
+  }
+
+
+
+double MainWindow::Fps::get() const {
+  uint64_t sum=0,num=0;
+  for(auto& i:dt)
+    if(i>0) {
+      sum+=i;
+      num++;
+      }
+  if(num==0 || sum==0)
+    return 60;
+  uint64_t fps = (1000*100*num)/sum;
+  return double(fps)/100.0;
+  }
+
+void MainWindow::Fps::push(uint64_t t) {
+  for(size_t i=9;i>0;--i)
+    dt[i]=dt[i-1];
+  dt[0]=t;
+  }
+
+void MainWindow::BenchmarkData::push(uint64_t t) {
+  fpsSum += t>0 ? (1000.0/double((t))) : 60.0;
+  numFrames++;
+  auto at = std::lower_bound(low1procent.begin(), low1procent.end(), t, std::greater<uint64_t>());
+  low1procent.insert(at, t);
+  low1procent.resize(std::min(low1procent.size(), (numFrames+99)/100));
+  }
+
+void MainWindow::BenchmarkData::clear() {
+  low1procent.reserve(128);
+  low1procent.clear();
+  numFrames = 0;
+  fpsSum = 0;
+  }

@@ -1,0 +1,105 @@
+#version 450
+
+#include "lighting/surfels/surf_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(std140, push_constant) uniform Push {
+  int tileSize;
+  int allocPass;
+  int postPass;
+  };
+layout(binding = 0, std140) uniform UboScene {
+  SceneDesc scene;
+  };
+
+layout(binding = 1, std430) buffer SB0 { uint binAlloc; };
+layout(binding = 2, std430) readonly buffer SB1 { SurfHeader header; Surfel surfels[]; } surf;
+layout(binding = 3, r32ui)  uniform uimage2D          surfCnts;
+layout(binding = 4, r32ui)  uniform readonly uimage2D surfBins;
+layout(binding = 5, std430) buffer SB2 { uint surfelIds[]; };
+
+vec3 mkTangent(vec3 norm) {
+  // Pick axis least parallel to n
+  vec3 up = abs(norm.z) < 0.999f ? vec3(0.0f, 0.0f, 1.0f) : vec3(1.0f, 0.0f, 0.0f);
+  return normalize(cross(norm, up));
+  }
+
+ivec4 projectSurfel(const Surfel s) {
+  vec3  n = decodeNormal(s.norm);
+  vec3  c = s.pos;
+  float r = s.radius;
+
+  vec3 t  = mkTangent(n);
+  vec3 bt = cross(n, t);
+
+  vec2 mn = vec2( 100);
+  vec2 mx = vec2(-100);
+
+  // center + ellipse axes
+  vec3 points[5];
+  points[0] = c;
+  points[1] = c + t  * r;
+  points[2] = c - t  * r;
+  points[3] = c + bt * r;
+  points[4] = c - bt * r;
+
+  for(int i=0; i<points.length(); i++)  {
+    vec4 clip = scene.viewProject * vec4(points[i],1.0);
+    // behind camera
+    if(clip.w <= 0.0)
+      continue;
+    vec2 ndc = clip.xy / clip.w;
+    mn = min(mn, ndc);
+    mx = max(mx, ndc);
+    }
+
+  // convert NDC [-1,1] -> pixel coordinates
+  vec2  screen = scene.screenRes;
+  ivec2 minXY  = ivec2((mn * 0.5 + 0.5) * screen);
+  ivec2 maxXY  = ivec2((mx * 0.5 + 0.5) * screen);
+
+  return ivec4(minXY, maxXY);
+  }
+
+void main() {
+  const uint surfelId = gl_GlobalInvocationID.x;
+  if(surfelId>=surf.header.count)
+    return;
+  if(surfelId<surf.header.count-surf.header.added && postPass==1)
+    return;
+
+  const Surfel p          = surf.surfels[surfelId];
+  const ivec2  fragCoord  = p.fragCoord;
+  const int    radiusPix  = DefaultCoverage;
+
+  if(!isSurfelAlive(p))
+    return;
+
+#if 1
+  ivec2  pos0 = ivec2(fragCoord-radiusPix)/tileSize;
+  ivec2  pos1 = ivec2(fragCoord+radiusPix)/tileSize + 1;
+#else
+  ivec4  aabb = projectSurfel(p);
+  ivec2  pos0 = ivec2(aabb.xy)/tileSize;
+  ivec2  pos1 = ivec2(aabb.zw)/tileSize + 1;
+#endif
+
+  ivec2 sz   = imageSize(surfCnts);
+  pos0 = max(ivec2(0), pos0);
+  pos1 = min(sz,       pos1);
+
+  for(int y=pos0.y; y<pos1.y; ++y)
+    for(int x=pos0.x; x<pos1.x; ++x) {
+      const ivec2 tile = ivec2(x, y);
+      const uint  lptr = imageAtomicAdd(surfCnts, tile, 1);
+      if(allocPass==0)
+        continue;
+      const uint ptr = imageLoad(surfBins, tile).x + lptr;
+      if(ptr>=surfelIds.length())
+        return; // error! Must be too little memmory for the binning
+      surfelIds[ptr] = surfelId;
+      }
+  }

@@ -1,0 +1,60 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "common.glsl"
+
+layout(binding = 0)      uniform sampler2D         zbuffer;
+layout(binding = 1, r16) uniform writeonly image2D hiZ;
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+uint nextPot(uint x) {
+  x--;
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+  x++;
+  return x;
+  }
+
+uvec2 nextPot(uvec2 v) {
+  return uvec2(nextPot(v.x), nextPot(v.y));
+  }
+
+shared uint depthSh;
+
+void main() {
+  depthSh = 0;
+  barrier();
+
+  const uvec2 srcSz  = textureSize(zbuffer,0);
+  const uvec2 potSz  = nextPot(srcSz);
+  const ivec2 dstSz  = imageSize(hiZ);
+  const ivec2 tileSz = ivec2(potSz)/dstSz;
+
+  // const ivec2 tileCnt = tileSz/ivec2(gl_WorkGroupSize.xy); // 4x4, for shadows
+
+  float z = 0;
+  const ivec2 at0 = ivec2(gl_WorkGroupID.xy) * tileSz;
+  const ivec2 xy0 = ivec2(gl_LocalInvocationID.xy);
+  for(int x=xy0.x; x<tileSz.x; x+=int(gl_WorkGroupSize.x)) {
+    for(int y=xy0.y; y<tileSz.y; y+=int(gl_WorkGroupSize.y)) {
+      ivec2 at = at0 + ivec2(x,y);
+      if(any(greaterThanEqual(at,srcSz)))
+        continue;
+      float zv = texelFetch(zbuffer, at, 0).r;
+      z = max(z, zv);
+      }
+    }
+  atomicMax(depthSh, floatBitsToUint(z));
+  barrier();
+
+  if(gl_LocalInvocationID.xy == uvec2(0)) {
+    z = uintBitsToFloat(depthSh);
+    z = packHiZ(z);
+    imageStore(hiZ, ivec2(gl_WorkGroupID.xy), vec4(z + 1.0/32768.0));
+    }
+  }

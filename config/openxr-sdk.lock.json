@@ -1,0 +1,56 @@
+{
+  "version": "1.1.43",
+  "source": "org.khronos.openxr:openxr_loader_for_android:1.1.43",
+  "source_url": "https://repo.maven.apache.org/maven2/org/khronos/openxr/openxr_loader_for_android/1.1.43/openxr_loader_for_android-1.1.43.aar",
+  "archive_sha256": "7e1b36141f9a4f1fa4a7e061936344fd9fcd36bce6c47eae2ad09812736167b6",
+  "files": [
+    {
+      "path": "toolchain/openxr-1.1.43/META-INF/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr.h",
+      "sha256": "102552dd30e459cc09a01d497cf6961a6e758892731881f363bef9a24ab3f8d5"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr_loader_negotiation.h",
+      "sha256": "8b15d2802a65629a7c18eebc163a1767d8e5979714c2761f561e52523d386d4b"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr_platform.h",
+      "sha256": "83132da278b9517c79cb3e2d1a119895f3d9c2f06a031e791639f96235643505"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr_platform_defines.h",
+      "sha256": "47738e2088a63051ab586fd44da1e0c556aa6f78ccc841bb5eeb29b13e3704c3"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr_reflection.h",
+      "sha256": "e6d5f100c65f75c88087f37826368ab13688bfdbc576035af48b77370afbc347"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr_reflection_parent_structs.h",
+      "sha256": "99e756df174ed0746eb0450ea79059e804be85719c5c92aff14e5054f206fa7f"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/headers/include/openxr/openxr_reflection_structs.h",
+      "sha256": "8879a2ccdce8306712476606aba33c4ad12449829cfa183047618c4c350cb734"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/openxr_loader/libs/android.arm64-v8a/libopenxr_loader.so",
+      "sha256": "713e3bb8d955254c670acc1c4899a65cb8c930e97dd9958bf37ea922d72b7a06"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/openxr_loader/libs/android.armeabi-v7a/libopenxr_loader.so",
+      "sha256": "2097dc1f80211e828be01d098d2ece30bfe74bac749b650bab4c8e40516fae53"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/openxr_loader/libs/android.x86/libopenxr_loader.so",
+      "sha256": "49d6f2fc33653fe2dfc4054e0a0f6551ed7d94f556b8ebb19ec4495f1570cc62"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43/prefab/modules/openxr_loader/libs/android.x86_64/libopenxr_loader.so",
+      "sha256": "f7dd88045009be157b6d25041782e769a8aafd2c70a65b9d19d8fc9083fa376e"
+    }
+  ]
+}

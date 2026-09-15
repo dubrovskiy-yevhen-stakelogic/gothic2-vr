@@ -1,0 +1,151 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes       : enable
+#extension GL_GOOGLE_include_directive          : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "scene.glsl"
+#include "common.glsl"
+
+// VR: EXPOSURE_STORE
+// (first eye) also writes the result to binding 5; EXPOSURE_APPLY (second eye)
+// only copies it into this eye's scene buffer, which its Update globals has
+// just re-uploaded with exposure=1 and the raw sun/ambient. Exact: both eyes
+// read the same LUTs (drawn by the first eye only) and the same sky fields.
+#if defined(EXPOSURE_APPLY)
+layout(local_size_x = 1) in;
+#else
+layout(local_size_x = 128) in;
+#endif
+
+layout(binding = 0, std140) buffer UboScene {
+  SceneDesc scene;
+  };
+#if defined(EXPOSURE_STORE) || defined(EXPOSURE_APPLY)
+layout(binding = 5, std430) buffer ExposureShared {
+  vec4 sunColorExposure;
+  vec4 ambientLuminance;
+  } exposureShared;
+#endif
+
+#if defined(EXPOSURE_APPLY)
+void main() {
+  scene.sunColor     = exposureShared.sunColorExposure.rgb;
+  scene.exposure     = exposureShared.sunColorExposure.a;
+  scene.ambient      = exposureShared.ambientLuminance.rgb;
+  scene.luminanceMed = exposureShared.ambientLuminance.a;
+  }
+#else
+layout(push_constant, std430) uniform UboPush {
+  float baseL;
+  float sunOcclusion;
+  } push;
+layout(binding = 1) uniform sampler2D skyLUT;
+layout(binding = 2) uniform sampler2D tLUT;
+layout(binding = 3) uniform sampler2D cloudsLUT;
+layout(binding = 4) uniform texture2D irradiance;
+
+const uint NumInvocations = gl_WorkGroupSize.x*gl_WorkGroupSize.y*gl_WorkGroupSize.z;
+const uint HistMid        = (NumInvocations/2);
+
+shared uint minSkyLuminance;
+shared uint maxSkyLuminance;
+
+float luminosity(vec3 color) {
+  return dot(color, vec3(0.2125, 0.7154, 0.0721));
+  }
+
+void processValue(vec3 val) {
+  float lx = luminosity(val);
+  uint  lu = floatBitsToUint(lx);
+
+  atomicMax(maxSkyLuminance, lu);
+  atomicMin(minSkyLuminance, lu);
+  }
+
+vec3 resolveMiss(const vec3 rayOrigin, const vec3 rayDirection) {
+  // PERF: need to preload sky lut early in shader
+  const vec3 lcolor  = textureSkyLUT(skyLUT, vec3(0,RPlanet,0), rayDirection, scene.sunDir);
+  const vec3 ambient = scene.ambient;
+
+  vec3 color = vec3(0);
+  color += lcolor;
+  return color;
+  }
+
+void gather() {
+  const uint smpCount = 8;
+
+  for(uint i=0; i<smpCount; ++i) {
+    vec3 dir = sampleHemisphere(gl_LocalInvocationIndex*smpCount+i, gl_WorkGroupSize.x*smpCount, 0);
+
+    vec3 sky = vec3(0);
+    sky = resolveMiss(vec3(0), +dir);
+    processValue(sky);
+    }
+  }
+
+// 5.5.2. LUT parameterization
+vec3 textureLUT(sampler2D tex, vec3 pos, vec3 sunDir) {
+  float height   = length(pos);
+  vec3  up       = pos / height;
+  float cosAngle = dot(sunDir, up);
+
+  vec2 uv;
+  uv.x = 0.5 + 0.5*cosAngle;
+  uv.y = (height - RPlanet)/(RAtmos - RPlanet);
+  return texture(tex, uv).rgb;
+  }
+
+vec3 skyIrradiance() {
+#if 0
+  return vec3(0.0005);
+#else
+  vec3 ret = vec3(0);
+  ret += texelFetch(irradiance, ivec2(2,1), 0).rgb;
+  return ret;
+#endif
+  }
+
+void main() {
+  minSkyLuminance = 0xFFFFFFFF;
+  maxSkyLuminance = 0;
+  barrier();
+
+  gather();
+  barrier();
+
+  if(gl_LocalInvocationIndex==0) {
+    const float vmax     = uintBitsToFloat(maxSkyLuminance);
+    const float vmin     = uintBitsToFloat(minSkyLuminance);
+
+    const vec3  pos      = vec3(0, RPlanet+1, 0);
+    const vec3  tr       = textureLUT(tLUT, pos, scene.sunDir).rgb;
+    const float cldVal   = textureLod(cloudsLUT, vec2(scene.isNight,0), 0).a;
+    const float clouds   = (1.0 - pow(cldVal, 4));
+    // const float clouds   = max(1.0 - exp(-cldVal*2), 0.01);
+
+    // in vanilla game night time attenuated as rgb{18 16 60}
+    // const vec3  NightAmbient = vec3(0.2, 0.2, 1)*0.36;
+    const vec3  sunColor     = scene.sunColor * tr;
+    const vec3  ambient      = scene.ambient  * tr;
+
+    const vec3  light  = sunColor*Fd_Lambert + ambient + skyIrradiance();
+    const float objLum = dot(light, vec3(0.2125, 0.7154, 0.0721));
+    const float skyLum = (vmin + vmax) * 0.5 * scene.GSunIntensity;
+
+    const float lum    = max(objLum*2.5, skyLum*clouds*1.5);
+
+    // float lum = tr.b;
+    scene.sunColor     = sunColor * clouds * push.sunOcclusion;
+    scene.ambient      = ambient  * clouds;
+    scene.exposure     = 1.0 / max(lum*1.25 + push.baseL, 0.0000001);
+    //scene.exposure     = 1.0 / max(6400, 0.0000005);
+    scene.luminanceMed = lum;
+#if defined(EXPOSURE_STORE)
+    exposureShared.sunColorExposure = vec4(scene.sunColor, scene.exposure);
+    exposureShared.ambientLuminance = vec4(scene.ambient,  scene.luminanceMed);
+#endif
+    }
+  }
+#endif

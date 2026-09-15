@@ -1,0 +1,284 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#include "scene.glsl"
+
+// The shared world grid supplies candidates. A conservative world-space box
+// rejects lights at 16x16 screen-tile granularity before fragment shading.
+layout(local_size_x=8, local_size_y=8) in;
+layout(binding=0,std140) uniform UboScene { SceneDesc scene; };
+layout(binding=3) uniform sampler2D depth;
+layout(binding=4,std430) readonly buffer Lights { LightSource lights[]; };
+struct Cell { ivec3 key; uint offset; uint count; uint pad0; uint pad1; uint pad2; };
+layout(binding=5,std430) readonly buffer Grid { Cell cells[]; };
+layout(binding=6,std430) readonly buffer Indices { uint ids[]; };
+layout(binding=7,std430) readonly buffer Fallback { uint fallbackIds[]; };
+layout(binding=8,std430) readonly buffer Visible { LightSource visibleLights[]; };
+layout(binding=9,std430) writeonly buffer Tiles { uint tiles[]; };
+layout(binding=10,std430) readonly buffer Arguments { uint args[]; };
+layout(push_constant,std430) uniform Push {
+  vec3 origin;
+  uint tableMask;
+  uint fallbackCount;
+  float cellSize;
+  uint globalLightCount;
+  uint visibleCount;
+} push;
+
+const uint TileCapacity=64u;
+const uint TileStride=TileCapacity+1u;
+const uint CompactBit=0x80000000u;
+const uint MaxGridLights=16384u;
+shared vec3 lower[64];
+shared vec3 upper[64];
+#if !defined(EXACT_PIXEL_BOUNDS)
+shared float minDepth[64];
+shared float maxDepth[64];
+shared vec4 corners[8];
+shared float cornerNumerator[8];
+shared uint fastSafe;
+#endif
+shared uint invalidPosition;
+shared uint count;
+shared uint seen[MaxGridLights/32u];
+shared uvec2 gridCandidates[8];
+shared uint gridCellCount;
+
+bool intersectsTile(LightSource light) {
+  bool keep=invalidPosition!=0u || any(isnan(light.pos)) || any(isinf(light.pos)) ||
+            isnan(light.range) || isinf(light.range) || light.range<=0.0;
+  if(!keep) {
+    const vec3 delta=light.pos-clamp(light.pos,lower[0],upper[0]);
+    // Identical outward padding to light_tiles.comp, in world centimetres.
+    const float pad=0.25+max(max(abs(light.pos.x),abs(light.pos.y)),abs(light.pos.z))*0.000002;
+    keep=dot(delta,delta)<=(light.range+pad)*(light.range+pad);
+  }
+  return keep;
+}
+
+void append(uint base,uint id) {
+  const uint slot=atomicAdd(count,1u);
+  if(slot<TileCapacity) tiles[base+1u+slot]=id;
+}
+
+void appendGlobal(uint base,uint id) {
+  if(id>=push.globalLightCount) return;
+  const LightSource light=lights[id];
+  // Stable global slots include disabled/freed lights. They cannot contribute
+  // and should not force a tile into its complete-visible-list fallback.
+  if(!(light.range>0.0) || !intersectsTile(light)) return;
+  const uint bit=1u<<(id&31u);
+  if((atomicOr(seen[id>>5u],bit)&bit)==0u) append(base,id);
+}
+
+uvec2 cellCandidates(ivec3 key) {
+  uint slot=(uint(key.x)*73856093u ^ uint(key.y)*19349663u ^ uint(key.z)*83492791u)&push.tableMask;
+  for(uint probe=0u;probe<=push.tableMask;++probe) {
+    const Cell cell=cells[slot];
+    if(cell.count==0u) break;
+    if(all(equal(cell.key,key))) return uvec2(cell.offset,cell.count);
+    slot=(slot+1u)&push.tableMask;
+  }
+  return uvec2(0u);
+}
+
+void main() {
+  const uint lane=gl_LocalInvocationIndex;
+  const ivec2 size=textureSize(depth,0);
+  const uint tileWidth=uint((size.x+15)/16);
+  const uint base=(gl_WorkGroupID.y*tileWidth+gl_WorkGroupID.x)*TileStride;
+  const uint visibleCount=args[1];
+  if(visibleCount==0u) {
+    if(lane==0u) tiles[base]=0u;
+    return;
+  }
+  if(lane==0u) { invalidPosition=0u; count=0u; }
+#if defined(EXACT_PIXEL_BOUNDS)
+  lower[lane]=vec3(3.402823e38);
+  upper[lane]=vec3(-3.402823e38);
+#else
+  minDepth[lane]=3.402823e38;
+  maxDepth[lane]=-3.402823e38;
+#endif
+  barrier();
+  for(int y=0;y<2;++y) for(int x=0;x<2;++x) {
+    const ivec2 pixel=ivec2(gl_WorkGroupID.xy)*16+ivec2(gl_LocalInvocationID.xy)+ivec2(x,y)*8;
+    if(any(greaterThanEqual(pixel,size))) continue;
+    const float z=texelFetch(depth,pixel,0).x;
+    if(z==1.0) continue;
+    if(isnan(z) || isinf(z)) { atomicOr(invalidPosition,1u); continue; }
+#if defined(EXACT_PIXEL_BOUNDS)
+    const vec2 scr=((vec2(pixel)+vec2(0.5))/vec2(size))*2.0-1.0;
+    const vec4 p=scene.viewProjectLwcInv*vec4(scr,z,1.0);
+    const vec3 world=p.xyz/p.w+push.origin;
+    if(any(isnan(world)) || any(isinf(world))) { atomicOr(invalidPosition,1u); continue; }
+    lower[lane]=min(lower[lane],world);
+    upper[lane]=max(upper[lane],world);
+#else
+    minDepth[lane]=min(minDepth[lane],z);
+    maxDepth[lane]=max(maxDepth[lane],z);
+#endif
+  }
+  barrier();
+  for(uint step=32u;step>0u;step>>=1u) {
+    if(lane<step) {
+#if defined(EXACT_PIXEL_BOUNDS)
+      lower[lane]=min(lower[lane],lower[lane+step]);
+      upper[lane]=max(upper[lane],upper[lane+step]);
+#else
+      minDepth[lane]=min(minDepth[lane],minDepth[lane+step]);
+      maxDepth[lane]=max(maxDepth[lane],maxDepth[lane+step]);
+#endif
+    }
+    barrier();
+  }
+#if !defined(EXACT_PIXEL_BOUNDS)
+  const bool hasDepth=minDepth[0]<=maxDepth[0];
+  if(hasDepth && lane<8u) {
+    const ivec2 firstPixel=ivec2(gl_WorkGroupID.xy)*16;
+    const ivec2 lastPixel=min(firstPixel+ivec2(15),size-ivec2(1));
+    const vec2 pixel=vec2((lane&1u)!=0u?lastPixel.x:firstPixel.x,
+                         (lane&2u)!=0u?lastPixel.y:firstPixel.y)+vec2(0.5);
+    const vec2 scr=(pixel/vec2(size))*2.0-1.0;
+    const float z=(lane&4u)!=0u?maxDepth[0]:minDepth[0];
+    const vec4 p=scene.viewProjectLwcInv*vec4(scr,z,1.0);
+    const vec3 world=p.xyz/p.w+push.origin;
+    corners[lane]=vec4(world,p.w);
+    cornerNumerator[lane]=max(max(abs(p.x),abs(p.y)),abs(p.z));
+  }
+  barrier();
+  if(lane==0u) {
+    lower[0]=vec3(3.402823e38);
+    upper[0]=vec3(-3.402823e38);
+    fastSafe=0u;
+    if(hasDepth) {
+      bool cornerValid=invalidPosition==0u && minDepth[0]>=0.0 && maxDepth[0]<=1.0;
+      const bool negativeW=corners[0].w<0.0;
+      float minW=3.402823e38, maxNumerator=0.0;
+      for(uint i=0u;i<8u;++i) {
+        if(any(isnan(corners[i])) || any(isinf(corners[i])) || corners[i].w==0.0 ||
+           (corners[i].w<0.0)!=negativeW || isnan(cornerNumerator[i]) || isinf(cornerNumerator[i]))
+          cornerValid=false;
+        minW=min(minW,abs(corners[i].w));
+        maxNumerator=max(maxNumerator,cornerNumerator[i]);
+        lower[0]=min(lower[0],corners[i].xyz);
+        upper[0]=max(upper[0],corners[i].xyz);
+      }
+      if(cornerValid) {
+        const float epsilon=1.1920928955078125e-7;
+        // Valid clip inputs have absolute value <=1. Use that global bound
+        // to include absolute UV rounding near zero as well as dot rounding.
+        const vec4 error=8.0*epsilon*(abs(scene.viewProjectLwcInv[0])+
+                                      abs(scene.viewProjectLwcInv[1])+
+                                      abs(scene.viewProjectLwcInv[2])+
+                                      abs(scene.viewProjectLwcInv[3]));
+        // A common w sign proves corner extrema in exact arithmetic. Bound
+        // FP32 dot cancellation and division as well before trusting them.
+        if(!any(isnan(error)) && !any(isinf(error)) && minW>4.0*error.w) {
+          const float denominator=minW-2.0*error.w;
+          const float numeratorError=max(max(error.x,error.y),error.z);
+          const float quotient=(maxNumerator+numeratorError)/denominator;
+          const float originMagnitude=max(max(abs(push.origin.x),abs(push.origin.y)),abs(push.origin.z));
+          const float errorPad=0.25+2.0*(numeratorError+quotient*error.w)/denominator+
+                               8.0*epsilon*(quotient+originMagnitude);
+          const vec3 magnitude=max(abs(lower[0]),abs(upper[0]));
+          const float existingPad=0.25+max(max(magnitude.x,magnitude.y),magnitude.z)*0.000002;
+          const float pad=max(existingPad,errorPad);
+          // Ill-conditioned distant tiles use exact samples instead of an
+          // excessively expanded box that would admit most world lights.
+          if(!isnan(pad) && !isinf(pad) && pad<=max(existingPad,8.0)) {
+            lower[0]-=vec3(pad);
+            upper[0]+=vec3(pad);
+            fastSafe=1u;
+          }
+        }
+      }
+    }
+  }
+  barrier();
+  if(hasDepth && fastSafe==0u) {
+    lower[lane]=vec3(3.402823e38);
+    upper[lane]=vec3(-3.402823e38);
+    for(int y=0;y<2;++y) for(int x=0;x<2;++x) {
+      const ivec2 pixel=ivec2(gl_WorkGroupID.xy)*16+ivec2(gl_LocalInvocationID.xy)+ivec2(x,y)*8;
+      if(any(greaterThanEqual(pixel,size))) continue;
+      const float z=texelFetch(depth,pixel,0).x;
+      if(z==1.0) continue;
+      if(isnan(z) || isinf(z)) { atomicOr(invalidPosition,1u); continue; }
+      const vec2 scr=((vec2(pixel)+vec2(0.5))/vec2(size))*2.0-1.0;
+      const vec4 p=scene.viewProjectLwcInv*vec4(scr,z,1.0);
+      const vec3 world=p.xyz/p.w+push.origin;
+      if(any(isnan(world)) || any(isinf(world))) { atomicOr(invalidPosition,1u); continue; }
+      lower[lane]=min(lower[lane],world);
+      upper[lane]=max(upper[lane],world);
+    }
+    barrier();
+    for(uint step=32u;step>0u;step>>=1u) {
+      if(lane<step) {
+        lower[lane]=min(lower[lane],lower[lane+step]);
+        upper[lane]=max(upper[lane],upper[lane+step]);
+      }
+      barrier();
+    }
+  }
+#endif
+  const bool empty=any(greaterThan(lower[0],upper[0]));
+  if(!empty || invalidPosition!=0u) {
+    const vec3 magnitude=max(abs(lower[0]),abs(upper[0]));
+    const float cellPad=0.25+max(max(magnitude.x,magnitude.y),magnitude.z)*0.000002;
+    // Compute and fragment stages reconstruct separately. Include adjacent
+    // cells within the same arithmetic tolerance used for sphere rejection.
+    const vec3 first=floor((lower[0]-vec3(cellPad))/push.cellSize);
+    const vec3 last=floor((upper[0]+vec3(cellPad))/push.cellSize);
+    const vec3 extent=last-first+vec3(1.0);
+    // Check floats before integer conversion/subtraction; large spans and
+    // non-finite reconstruction take the existing GPU-compacted-list path.
+    const bool useGrid=invalidPosition==0u && push.globalLightCount<=MaxGridLights &&
+                       push.cellSize>0.0 && !isinf(push.cellSize) &&
+                       !any(isnan(first)) && !any(isinf(first)) &&
+                       !any(isnan(last)) && !any(isinf(last)) &&
+                       all(lessThan(abs(first),vec3(2147483000.0))) &&
+                       all(lessThan(abs(last),vec3(2147483000.0))) &&
+                       all(greaterThanEqual(extent,vec3(1.0))) &&
+                       all(lessThanEqual(extent,vec3(8.0))) && extent.x*extent.y*extent.z<=8.0;
+    if(lane==0u) {
+      gridCellCount=0u;
+      if(useGrid && push.fallbackCount<visibleCount) {
+        const ivec3 lo=ivec3(first), hi=ivec3(last);
+        const uvec3 dimensions=uvec3(hi-lo+ivec3(1));
+        const uint cellCount=dimensions.x*dimensions.y*dimensions.z;
+        uint candidateCount=push.fallbackCount;
+        gridCellCount=cellCount;
+        for(uint i=0u;i<cellCount;++i) {
+          const ivec3 key=lo+ivec3(i%dimensions.x,(i/dimensions.x)%dimensions.y,i/(dimensions.x*dimensions.y));
+          const uvec2 candidates=cellCandidates(key);
+          // Saturating comparison also avoids overflow in the candidate sum.
+          // Repeated cell IDs only make this conservative in favour of the
+          // already compacted list, which needs no deduplication.
+          if(candidates.y>=visibleCount-candidateCount) {
+            gridCellCount=0u;
+            break;
+          }
+          candidateCount+=candidates.y;
+          gridCandidates[i]=candidates;
+        }
+      }
+    }
+    barrier();
+    if(gridCellCount!=0u) {
+      for(uint i=lane;i<MaxGridLights/32u;i+=64u) seen[i]=0u;
+      barrier();
+      for(uint cell=0u;cell<gridCellCount;++cell) {
+        const uvec2 candidates=gridCandidates[cell];
+        for(uint i=lane;i<candidates.y;i+=64u) appendGlobal(base,ids[candidates.x+i]);
+      }
+      for(uint i=lane;i<push.fallbackCount;i+=64u) appendGlobal(base,fallbackIds[i]);
+    } else {
+      for(uint i=lane;i<visibleCount;i+=64u)
+        if(intersectsTile(visibleLights[i])) append(base,CompactBit|i);
+    }
+  }
+  barrier();
+  // Count is intentionally uncapped: >64 tells the fragment shader to use
+  // all GPU-compacted lights, never the entire world-light collection.
+  if(lane==0u) tiles[base]=count;
+}

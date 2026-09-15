@@ -1,0 +1,14 @@
+/.build/
+/.idea/
+/.vscode/
+/.cache/
+/.vs/
+
+/build/
+/cmake-build-*/
+/out/
+/data/
+/site/
+
+*.proprietary.*
+*.env

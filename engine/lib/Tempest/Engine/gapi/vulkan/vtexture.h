@@ -1,0 +1,77 @@
+#pragma once
+
+#include <Tempest/AbstractGraphicsApi>
+#include "vulkan_sdk.h"
+
+#include "vallocator.h"
+#include "../utility/spinlock.h"
+
+namespace Tempest {
+
+class Pixmap;
+
+namespace Detail {
+
+class VDevice;
+class VBuffer;
+class VFramebufferMap;
+
+class VTexture : public AbstractGraphicsApi::Texture {
+  public:
+    VTexture()=default;
+    VTexture(VTexture &&other);
+    VTexture(VDevice& device,VkImage borrowedColor);
+    ~VTexture();
+
+    VTexture& operator=(const VTexture& other)=delete;
+
+    VkImageView    view(const ComponentMapping& m, uint32_t mipLevel, bool is3D, bool isUAV);
+    void           descriptor(void* dest, const ComponentMapping& m, uint32_t mipLevel, bool is3D, bool isUAV);
+    VkImageView    fboView(uint32_t mip);
+    uint32_t       mipCount() const override { return mipCnt; }
+    NonUniqResId   syncId() const override { return nonUniqId; }
+
+    VkImageViewCreateInfo createInfo(const ComponentMapping* cmap, uint32_t mipLevel, bool is3D) const;
+    VkImageLayout         defaultLayout() const;
+
+    VkImage                impl      = VK_NULL_HANDLE;
+    VkImageView            imgView   = VK_NULL_HANDLE;
+    VkFormat               format    = VK_FORMAT_UNDEFINED;
+    NonUniqResId           nonUniqId = NonUniqResId::I_None;
+
+    uint32_t               mipCnt         = 1;
+    VAllocator*            alloc          = nullptr;
+    VAllocator::Allocation page           = {};
+    bool                   isStorageImage = false;
+    bool                   is3D           = false;
+    bool                   isFilterable   = false;
+    bool                   borrowedColor = false;
+    bool                   isDensityMap  = false; // VK_EXT_fragment_density_map attachment (layout FRAGMENT_DENSITY_MAP_OPTIMAL)
+    uint32_t               mapW = 0, mapH = 0;
+
+  protected:
+    void createViews (VkDevice device);
+    void destroyViews(VkDevice device);
+    void createView  (VkImageView& ret, VkDevice device, VkFormat format,
+                    const ComponentMapping* cmap, uint32_t mipLevel, bool is3D);
+
+    struct View {
+      ComponentMapping m;
+      uint32_t         mip   = uint32_t(0);
+      bool             is3D  = false;
+      VkImageView      v;
+      };
+    Detail::SpinLock     syncViews;
+    std::vector<View>    extViews;
+    std::vector<uint8_t> extDescr;
+
+    friend class VAllocator;
+  };
+
+class VTextureWithFbo : public VTexture {
+  public:
+    VTextureWithFbo(VTexture&& base);
+    ~VTextureWithFbo();
+  };
+
+}}

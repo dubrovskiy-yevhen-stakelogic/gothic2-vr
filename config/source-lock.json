@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "description": "Gothic II VR stage 0: reviewed Android OpenGothic baseline; all actual recursive gitlinks and mandatory platform FetchContent archives.",
+  "repositories": [
+    { "path": ".", "url": "https://github.com/Solessfir/OpenGothic.git", "commit": "f9d31021081d02d5d317af93c2077e8af36cdfdc", "parent": null, "submodulePath": null },
+    { "path": "lib/Tempest", "url": "https://github.com/Solessfir/Tempest.git", "commit": "a3a1556c0f579859d25ebec17fb01fd16faafbe7", "parent": ".", "submodulePath": "lib/Tempest" },
+    { "path": "lib/TinySoundFont", "url": "https://github.com/schellingb/TinySoundFont.git", "commit": "92a8f0e9fe3c98358be7d8564db21fc4b1142d04", "parent": ".", "submodulePath": "lib/TinySoundFont" },
+    { "path": "lib/ZenKit", "url": "https://github.com/GothicKit/ZenKit.git", "commit": "083cc5f5592726aed435f8e863a6e09e92748a4d", "parent": ".", "submodulePath": "lib/ZenKit" },
+    { "path": "lib/bullet3", "url": "https://github.com/bulletphysics/bullet3.git", "commit": "d1a4256b3a019117f2bb6cb8c63d6367aaf512e2", "parent": ".", "submodulePath": "lib/bullet3" },
+    { "path": "lib/dmusic", "url": "https://github.com/GothicKit/dmusic.git", "commit": "b73b270b94714b8ec8d9d0b2a9f3a5c445da52d1", "parent": ".", "submodulePath": "lib/dmusic" },
+    { "path": "lib/rapidjson", "url": "https://github.com/Tencent/rapidjson.git", "commit": "f54b0e47a08782a6131cc3d60f94d038fa6e0a51", "parent": ".", "submodulePath": "lib/rapidjson" },
+    { "path": "lib/ZenKit/vendor/doctest", "url": "https://github.com/doctest/doctest.git", "commit": "1da23a3e8119ec5cce4f9388e91b065e20bf06f5", "parent": "lib/ZenKit", "submodulePath": "vendor/doctest" },
+    { "path": "lib/ZenKit/vendor/libsquish", "url": "https://github.com/lmichaelis/phoenix-libsquish.git", "commit": "53167b39beee3c7ff441c4ee6ba522c2db27dad4", "parent": "lib/ZenKit", "submodulePath": "vendor/libsquish" },
+    { "path": "lib/rapidjson/thirdparty/gtest", "url": "https://github.com/google/googletest.git", "commit": "0a439623f75c029912728d80cb7f1b8b48739ca4", "parent": "lib/rapidjson", "submodulePath": "thirdparty/gtest" }
+  ],
+  "archives": [
+    {
+      "id": "directxshadercompiler",
+      "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/dxc_2023_03_01.zip",
+      "fileName": "dxc_2023_03_01.zip",
+      "sha256": "e4e8cb7326ff7e8a791acda6dfb0cb78cc96309098bfdb0ab1e465dc29162422",
+      "rootDirectory": ".",
+      "cmakeVariable": "FETCHCONTENT_SOURCE_DIR_DIRECTXSHADERCOMPILER",
+      "requiredFile": "inc/dxcapi.h",
+      "platform": "Windows DirectX 12",
+      "provenance": "lib/Tempest/Engine/CMakeLists.txt:214-216 at a3a1556c0f579859d25ebec17fb01fd16faafbe7"
+    },
+    {
+      "id": "tempestvulkanheaders",
+      "url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.357.0.zip",
+      "fileName": "vulkan-sdk-1.4.357.0.zip",
+      "sha256": "bc7925a17854a9bac9433309e8df88a701ef1d49d2020fff6db9407b637ea840",
+      "rootDirectory": "Vulkan-Headers-vulkan-sdk-1.4.357.0",
+      "cmakeVariable": "FETCHCONTENT_SOURCE_DIR_TEMPESTVULKANHEADERS",
+      "requiredFile": "include/vulkan/vulkan.h",
+      "platform": "Android Vulkan",
+      "provenance": "lib/Tempest/Engine/CMakeLists.txt:185-187 at a3a1556c0f579859d25ebec17fb01fd16faafbe7"
+    }
+  ],
+  "notes": [
+    "Tempest Tests/googletest is embedded as a regular tree at this commit despite a stale .gitmodules entry. ZenKit vendor/mio is also a stale .gitmodules entry, with no gitlink. Only actual pinned gitlinks are initialized.",
+    "ZenKit compressed Union VDF support (ZK_ENABLE_ZIPPED_VDF) defaults OFF. Its optional miniz archive is not required by the baseline and is not included.",
+    "Toolchain installation is separate. This lock does not download or install the Android SDK, NDK, JDK, Windows SDK, Vulkan SDK, or Gradle."
+  ]
+}

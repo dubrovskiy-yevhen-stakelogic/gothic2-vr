@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="true" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <application android:label="@APP_LABEL@" android:hasCode="true" android:allowBackup="false"
+        android:appCategory="game" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <activity android:name="org.tempest.TempestNativeActivity" android:exported="true"
+            android:launchMode="singleTask" android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="colorMode|density|fontScale|fontWeightAdjustment|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode">
+            <meta-data android:name="android.app.lib_name" android:value="@APP_LIBRARY_NAME@" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

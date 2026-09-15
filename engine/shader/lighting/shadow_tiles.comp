@@ -1,0 +1,66 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+
+// VR shadow tiles: for every 8x8-texel tile of a VR shadow map,
+// the min and max depth over the tile plus SHADOW_TILE_MARGIN texels on each
+// side. The texels are read with the same textureGather and ClampToEdge sampler
+// as the PCF (lighting/shadow_sampling.glsl), so the stored floats are the
+// values the PCF compares and the edge clamp is the PCF's own. calcShadowMs4
+// reads texels floor(u)-2 .. floor(u)+1 around a receiver at texel u (taps at
+// -0.75/+0.25 texel, 2x2 gathers); for u inside tile t that is t*8-2 .. t*8+8,
+// inside the dilated range t*8-4 .. t*8+11 with 2-3 texels to spare. A receiver
+// depth >= max is therefore lit by every tap and < min shadowed by every tap.
+//
+// One workgroup = 8x8 tiles: the 4x4-texel block min/max of the group's region
+// (64+2*margin texels per axis) go to shared memory, then each thread reduces
+// the (8+2*margin)/4 blocks per axis of its tile.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D shadowMap;
+layout(binding = 1, rg32f) uniform writeonly image2D tiles;
+
+#ifndef SHADOW_TILE_MARGIN
+#define SHADOW_TILE_MARGIN 4
+#endif
+
+const int T  = 8;                  // texels per tile
+const int M  = SHADOW_TILE_MARGIN; // dilation in texels, a multiple of B
+const int B  = 4;                  // texels per shared block (four 2x2 gathers)
+const int NB = (8*T + 2*M)/B;      // shared blocks per group axis
+const int TB = (T + 2*M)/B;        // shared blocks per tile axis
+
+#if (SHADOW_TILE_MARGIN % 4)!=0
+#error SHADOW_TILE_MARGIN must be a multiple of the 4-texel block
+#endif
+
+shared vec2 blk[NB*NB];
+
+void main() {
+  const vec2  texel = vec2(1.0)/vec2(textureSize(shadowMap, 0));
+  const ivec2 org   = ivec2(gl_WorkGroupID.xy)*(8*T) - ivec2(M);
+  for(int i=int(gl_LocalInvocationIndex); i<NB*NB; i+=int(gl_WorkGroupSize.x*gl_WorkGroupSize.y)) {
+    const ivec2 b  = org + ivec2(i%NB, i/NB)*B;
+    // Texel corners: each gather reads texels b+k .. b+k+1, clamped to the edge.
+    const vec4  g0 = textureGather(shadowMap, (vec2(b)+vec2(1,1))*texel);
+    const vec4  g1 = textureGather(shadowMap, (vec2(b)+vec2(3,1))*texel);
+    const vec4  g2 = textureGather(shadowMap, (vec2(b)+vec2(1,3))*texel);
+    const vec4  g3 = textureGather(shadowMap, (vec2(b)+vec2(3,3))*texel);
+    const vec4  mn = min(min(g0,g1), min(g2,g3));
+    const vec4  mx = max(max(g0,g1), max(g2,g3));
+    blk[i] = vec2(min(min(mn.x,mn.y), min(mn.z,mn.w)), max(max(mx.x,mx.y), max(mx.z,mx.w)));
+    }
+  barrier();
+
+  const ivec2 tile = ivec2(gl_GlobalInvocationID.xy);
+  if(any(greaterThanEqual(tile, imageSize(tiles))))
+    return;
+  const ivec2 b0 = ivec2(gl_LocalInvocationID.xy)*(T/B);
+  vec2 r = blk[b0.y*NB + b0.x];
+  for(int y=0; y<TB; ++y)
+    for(int x=0; x<TB; ++x) {
+      const vec2 v = blk[(b0.y+y)*NB + b0.x+x];
+      r = vec2(min(r.x,v.x), max(r.y,v.y));
+      }
+  imageStore(tiles, tile, vec4(r, 0.0, 0.0));
+  }

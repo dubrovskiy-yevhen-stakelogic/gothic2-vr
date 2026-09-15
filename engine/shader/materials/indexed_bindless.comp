@@ -1,0 +1,41 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : require
+#include "scene.glsl"
+layout(local_size_x=64) in;
+layout(binding=0,std430) readonly buffer Source { IndirectCmd source[]; };
+layout(binding=1,std430) readonly buffer Payload { uvec4 payload[]; };
+// Per original material bucket: index-pool base and original real IBO length.
+layout(binding=2,std430) readonly buffer Ranges { uvec2 ranges[]; };
+struct IndexedCommand { uint indexCount; uint instanceCount; uint firstIndex; int vertexOffset; uint firstInstance; };
+layout(binding=3,std430) writeonly buffer Output { IndexedCommand outputCmd[]; };
+layout(binding=4,std430) readonly buffer Indices { uint indexes[]; } ibo[];
+layout(push_constant) uniform Push { uint commandId; } push;
+void main() {
+  const uint lane=gl_GlobalInvocationID.x;
+  if(push.commandId>=source.length() || lane>=source[push.commandId].instanceCount) return;
+  const uint at=source[push.commandId].writeOffset+lane;
+  if(at>=payload.length() || at>=outputCmd.length()) return;
+  const uvec4 task=payload[at];
+  IndexedCommand result;
+  result.indexCount=0; result.instanceCount=1; result.firstIndex=0; result.vertexOffset=0; result.firstInstance=at;
+  if(task.z<ranges.length()) {
+    const uvec2 range=ranges[task.z];
+    const uint localIndex=task.y*192u;
+    if(task.y<=0xffffffffu/192u && localIndex<range.y) {
+      nonuniformEXT uint bucketId=task.z;
+      const uint last=task.y*64u+63u;
+      if(last<ibo[bucketId].indexes.length()) {
+        const uint bits=ibo[bucketId].indexes[last];
+        const bool sentinel=(bits&255u)==((bits>>8u)&255u);
+        // The sentinel's last triangle is degenerate even for a one-off mesh
+        // whose metadata says 64; do not expose a hidden original IBO triangle.
+        const uint primitives=sentinel ? min((bits>>16u)&255u,63u) : 64u;
+        result.indexCount=min(primitives*3u,range.y-localIndex);
+        result.indexCount-=result.indexCount%3u;
+        result.firstIndex=range.x+localIndex;
+      }
+    }
+  }
+  outputCmd[at]=result;
+}

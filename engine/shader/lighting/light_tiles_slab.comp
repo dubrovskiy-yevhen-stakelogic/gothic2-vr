@@ -1,0 +1,160 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#include "scene.glsl"
+
+// One workgroup per 16x16 screen tile. Each tile stores a 128-bit mask over
+// the GPU-compacted light list (bit i => compacted light i may touch the
+// tile) and counts lit tiles for diagnostics (the fullscreen fragment pass
+// exits early on empty masks, which measured cheaper on Adreno than drawing
+// lit tiles as quads). The list holds only the lights that light_visibility
+// routed here (large projected coverage); small lights use the volume route.
+// The fragment shader walks set bits in ascending light order, so the HDR
+// sum order equals the complete-list route for every contributing light.
+//
+// Selection is a conservative test in view space: the light sphere must
+// overlap the tile's depth slab (exact minimum/maximum non-sky depth of the
+// tile's pixels, padded) and, unless the sphere crosses the near plane, its
+// exact projected bounds must overlap the padded tile rectangle. Lights that
+// do not reach a pixel contribute exactly zero in the fragment shader, so a
+// superset never changes the image. More than 128 compacted lights signals
+// the complete-list route: every tile is listed and masks are ignored.
+layout(local_size_x=8, local_size_y=8) in;
+layout(binding=0,std140) uniform UboScene { SceneDesc scene; };
+layout(binding=3) uniform sampler2D depth;
+layout(binding=4,std430) readonly buffer Lights { LightSource lights[]; };   // slab list (light_visibility.comp)
+layout(binding=5,std430) buffer SlabArguments { uint slabArgs[]; };          // [0] light count, [1] lit tiles (diagnostics)
+layout(binding=6,std430) writeonly buffer Tiles { uint tiles[]; };
+layout(push_constant,std430) uniform Push { vec3 origin; } push;
+
+const uint MaskWords=4u;             // 128 lights per tile
+const uint MaskBits=MaskWords*32u;
+const uint TileStride=MaskWords+1u;  // [set-bit count, mask words]; the count alone answers "empty?"
+
+shared uint mask[MaskWords];
+shared uint depthMinBits;
+shared uint depthMaxBits;
+
+// Exact screen bounds of a sphere fully in front of the near plane, in the
+// same texel-normalised space as light_visibility.comp / hiZTest.
+vec4 projectedBounds(const vec3 c, const float R) {
+  const float P00 = scene.project[0][0];
+  const float P11 = scene.project[1][1];
+  const vec3  cr   = c * R;
+  const float czr2 = c.z * c.z - R * R;
+  const float vx   = sqrt(c.x * c.x + czr2);
+  const float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+  const float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+  const float vy   = sqrt(c.y * c.y + czr2);
+  const float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+  const float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+  const vec2 lo = vec2(minx * P00, miny * P11) + scene.project[2].xy;
+  const vec2 hi = vec2(maxx * P00, maxy * P11) + scene.project[2].xy;
+  return vec4(min(lo, hi), max(lo, hi))*0.5 + vec4(0.5);
+  }
+
+void main() {
+  const uint  lane      = gl_LocalInvocationIndex;
+  const uvec2 tile      = gl_WorkGroupID.xy;
+  const uint  tileWidth = gl_NumWorkGroups.x;
+  const uint  tileIndex = tile.y*tileWidth+tile.x;
+  const uint  base      = tileIndex*TileStride;
+  const uint  lightCount= slabArgs[0];
+
+  // Uniform across the workgroup and before any barrier.
+  if(lightCount==0u) {
+    if(lane<TileStride) tiles[base+lane]=0u;
+    return;
+    }
+  if(lightCount>MaskBits) {
+    // Complete-list route: masks are ignored, every tile is lit.
+    if(lane==0u) atomicAdd(slabArgs[1],1u);
+    if(lane<TileStride) tiles[base+lane]=0xffffffffu;
+    return;
+    }
+  if(lane<MaskWords) mask[lane]=0u;
+  if(lane==0u) { depthMinBits=floatBitsToUint(1.0); depthMaxBits=0u; }
+  barrier();
+
+  // Raw depth range of the tile. Sky (z==1) never receives local light and is
+  // excluded; a tile with only sky keeps an empty mask. One gather per lane
+  // reads its 2x2 block; blocks past the image edge are clamped onto the last
+  // in-range block, which only repeats real depths. Depth is non-negative, so
+  // its bit pattern orders like the value.
+  const ivec2 size=textureSize(depth,0);
+  const ivec2 block=min(ivec2(tile)*16+ivec2(gl_LocalInvocationID.xy)*2,size-ivec2(2));
+  const vec2  corner=(vec2(block)+1.0)/vec2(size);
+  const vec4  g=textureGather(depth,corner,0);
+  float dmin=1.0, dmax=0.0;
+  for(int k=0;k<4;++k) {
+    const float z=g[k];
+    if(!(z<1.0)) continue;
+    dmin=min(dmin,z);
+    dmax=max(dmax,z);
+    }
+  if(dmin<=dmax) {
+    atomicMin(depthMinBits,floatBitsToUint(dmin));
+    atomicMax(depthMaxBits,floatBitsToUint(dmax));
+    }
+  barrier();
+  dmin=uintBitsToFloat(depthMinBits);
+  dmax=uintBitsToFloat(depthMaxBits);
+  const bool emptyTile=!(dmin<=dmax);
+
+  if(!emptyTile) {
+    // Vulkan 0..1 depth, +z forward: d = P22 + P32/z  (see light_visibility.comp)
+    const float P22=scene.project[2][2];
+    const float P32=scene.project[3][2];
+    const float znear=-P32/P22;
+    float zmin=P32/(dmin-P22);
+    float zmax=P32/(dmax-P22);
+    if(!(zmin<=zmax)) { const float t=zmin; zmin=zmax; zmax=t; }
+    // Relative and absolute padding (cm) covers reconstruction rounding in the
+    // fragment shader, which uses the full inverse view-projection.
+    zmin=zmin-abs(zmin)*1e-4-1.0;
+    zmax=zmax+abs(zmax)*1e-4+1.0;
+    const bool validProjection=!isnan(P22) && !isinf(P22) && !isnan(P32) && !isinf(P32) &&
+                               P22!=0.0 && !isnan(znear) && !isinf(znear) && znear>0.0 &&
+                               !isnan(zmin) && !isinf(zmin) && !isnan(zmax) && !isinf(zmax);
+    // Tile rectangle in texel-normalised space, padded by one raster pixel.
+    const vec2 invSize=1.0/vec2(size);
+    const vec2 tileLo=(vec2(tile)*16.0-1.0)*invSize;
+    const vec2 tileHi=(vec2(tile+1u)*16.0+1.0)*invSize;
+
+    for(uint i=lane;i<lightCount;i+=64u) {
+      const LightSource light=lights[i];
+      bool keep=any(isnan(light.pos)) || any(isinf(light.pos)) ||
+                isnan(light.range) || isinf(light.range) || light.range<=0.0 || !validProjection;
+      if(!keep) {
+        const vec3  c  =(scene.view*vec4(light.pos,1.0)).xyz;
+        const float pad=0.25+max(max(abs(light.pos.x),abs(light.pos.y)),abs(light.pos.z))*0.000004;
+        const float R  =light.range+pad;
+        if(any(isnan(c)) || any(isinf(c))) {
+          keep=true;
+          }
+        else if(c.z+R<zmin || c.z-R>zmax) {
+          keep=false; // sphere entirely outside the tile's depth slab
+          }
+        else if(c.z-R<znear) {
+          keep=true;  // near-plane crossing: screen extent is unbounded
+          }
+        else {
+          vec4 bounds=projectedBounds(c,R);
+          if(any(isnan(bounds)) || any(isinf(bounds))) {
+            keep=true;
+            } else {
+            bounds+=vec4(-invSize,invSize);
+            keep=!(bounds.z<tileLo.x || bounds.x>tileHi.x || bounds.w<tileLo.y || bounds.y>tileHi.y);
+            }
+          }
+        }
+      if(keep) atomicOr(mask[i>>5u],1u<<(i&31u));
+      }
+    }
+  barrier();
+  if(lane<MaskWords) tiles[base+1u+lane]=mask[lane];
+  if(lane==0u) {
+    const uint set=uint(bitCount(mask[0]))+uint(bitCount(mask[1]))+uint(bitCount(mask[2]))+uint(bitCount(mask[3]));
+    tiles[base]=set;
+    if(set!=0u) atomicAdd(slabArgs[1],1u);
+    }
+  }

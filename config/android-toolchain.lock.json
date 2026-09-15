@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "javaVersion": "21",
+  "ndkVersion": "27.2.12479018",
+  "cmakeVersion": "3.22.1",
+  "buildToolsVersion": "35.0.0",
+  "compileSdk": 35,
+  "minSdk": 26,
+  "gradleVersion": "8.9",
+  "gradleSha256": "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab",
+  "agpVersion": "8.7.3",
+  "abi": "arm64-v8a",
+  "applicationId": "com.gothic2vr.quest",
+  "note": "Android standalone OpenXR build. SDK and JDK paths are supplied through ANDROID_SDK_ROOT / ANDROID_HOME and JAVA_HOME, or script parameters. JDK 21 patch releases are accepted."
+}

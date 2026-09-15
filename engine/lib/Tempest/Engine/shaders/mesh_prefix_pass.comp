@@ -1,0 +1,99 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes:enable
+
+layout(local_size_x = 128) in;
+
+struct Descriptor
+{
+  uint drawId;
+  uint ptr;
+  uint indSz;
+};
+
+struct DrawIndexedIndirectCommand
+{
+  uint drawId;
+  uint indexCountSrc;
+  uint indexCount;
+  uint instanceCount;
+  uint firstIndex;    // prefix sum
+  int  vertexOffset;  // can be abused to offset into var_buffer
+  uint firstInstance; // caps: should be zero
+  uint lutPtr;
+};
+
+layout(binding = 0, std430) restrict buffer EngineInternal0
+{
+  DrawIndexedIndirectCommand indirect[];
+};
+
+layout(binding = 1, std430) restrict buffer EngineInternal1
+{
+  uint       taskletCnt;
+  uint       meshletCnt;
+  uint       iterator;
+  Descriptor desc[];
+} mesh;
+
+layout(binding = 2, std430) restrict buffer EngineInternal2
+{
+  uint grow;
+  uint heap[];
+} var;
+
+shared uint partialSummIbo[gl_WorkGroupSize.x];
+
+layout(push_constant, std430) uniform UboPush {
+  uint indirectRate;
+  uint indirectCmdCount;
+  };
+
+void main() {
+  uint index = gl_LocalInvocationID.x;
+  uint len   = indirectCmdCount;
+
+  uint b = ((index+0)*len)/gl_WorkGroupSize.x;
+  uint e = ((index+1)*len)/gl_WorkGroupSize.x;
+
+  uint sumIbo = 0;
+  [[loop]]
+  for(uint i=b; i<e; ++i) {
+    sumIbo += indirect[i*indirectRate].indexCountSrc;
+    }
+  partialSummIbo[index] = sumIbo;
+
+  memoryBarrierShared();
+  barrier();
+
+  uint prefixIbo = 0;
+  for(uint i=0; i<index; ++i)
+    prefixIbo += partialSummIbo[i];
+
+  memoryBarrierShared();
+  barrier();
+
+  const uint grow = var.grow;
+  [[loop]]
+  for(uint i=b; i<e; ++i) {
+    uint idx        = i*indirectRate;
+    uint indexCount = indirect[idx].indexCountSrc;
+    uint firstIndex = indexCount>0 ? grow + prefixIbo : 0;
+    uint inst       = indexCount>0 ? 1 : 0;
+
+    prefixIbo += indexCount;
+
+    indirect[idx].indexCount    = 0;
+    indirect[idx].instanceCount = inst;
+    indirect[idx].firstIndex    = firstIndex;
+    indirect[idx].vertexOffset  = 0;
+    indirect[idx].firstInstance = 0;
+    indirect[idx].lutPtr        = 0;
+    }
+
+  barrier();
+  // cleanup
+  for(uint i=b; i<e; ++i) {
+    indirect[i*indirectRate].indexCountSrc = 0;
+    }
+  }

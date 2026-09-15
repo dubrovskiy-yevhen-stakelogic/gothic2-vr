@@ -1,0 +1,37 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_GOOGLE_include_directive    : enable
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform writeonly image2D shadowLq;
+layout(binding = 1) uniform sampler2D textureSm1;
+
+void main() {
+  const ivec2 srcSz = textureSize(textureSm1,0);
+  const ivec2 dstSz = imageSize(shadowLq);
+  const ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy);
+  if(dstUV.x>=dstSz.x || dstUV.y>=dstSz.y)
+    return;
+
+  const int sX = ((dstUV.x+0)*srcSz.x)/dstSz.x;
+  const int eX = ((dstUV.x+1)*srcSz.x)/dstSz.x;
+
+  const int sY = ((dstUV.y+0)*srcSz.y)/dstSz.y;
+  const int eY = ((dstUV.y+1)*srcSz.y)/dstSz.y;
+
+  float maxS = 0, cnt = 0;
+  for(int y=sY; y<eY; ++y)
+    for(int x=sX; x<eX; ++x) {
+      // NOTE: this is not strictly correct, as depth buffer values are non-linear
+      vec4 sh = texelFetch(textureSm1, ivec2(x,y), 0);
+      //maxS = max(maxS, sh.x);
+      maxS += sh.x;
+      if(sh.x>0)
+        cnt++;
+      }
+
+  maxS = maxS/max(1,cnt);
+  imageStore(shadowLq, dstUV, vec4(maxS));
+  }

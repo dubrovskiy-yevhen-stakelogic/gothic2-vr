@@ -1,0 +1,37 @@
+#version 440
+
+#define REPRODUCER 1
+
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define MAX_RT_STACK_DEPTH 16
+
+struct TraverseStack {
+  uint v[MAX_RT_STACK_DEPTH+1];
+  };
+
+layout(binding = 1, std140) readonly buffer Tlas {
+  uint node[];
+  } tlas;
+
+void main() {
+#if REPRODUCER
+  TraverseStack stack;
+#else
+  uint stack[MAX_RT_STACK_DEPTH+1];
+#endif
+
+  stack.v[0] = 0;
+  int   pos  = 0;
+
+  [[dont_unroll]]
+  while(pos>=0) {
+    uint i = stack.v[pos];
+    uint n = tlas.node[i];
+
+    if(n>0)
+      stack.v[pos] = n; else
+      pos--;
+    }
+  }

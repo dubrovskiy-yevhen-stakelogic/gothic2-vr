@@ -1,0 +1,250 @@
+cmake_minimum_required(VERSION 3.16)
+
+project(OpenGothic LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(BUILD_SHARED_LIBS OFF)
+
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/opengothic)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/opengothic)
+set(CMAKE_DEBUG_POSTFIX "")
+set(CMAKE_RELWITHDEBINFO_POSTFIX "")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_SKIP_RPATH ON)
+
+if(ANDROID AND CMAKE_BUILD_TYPE STREQUAL "Release")
+  # The pinned NDK supports ThinLTO through Clang, llvm-ar and LLD.
+  # CMake 3.22's IPO check incorrectly selects the removed gold linker with this toolchain.
+  add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:-flto=thin>")
+  add_link_options(-flto=thin)
+  # Keep symbols in build outputs for crash analysis; Gradle strips the APK's native library.
+  set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -DNDEBUG -g")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -g")
+endif()
+
+add_library(${PROJECT_NAME} STATIC)
+if(ANDROID)
+  add_library(Gothic2Notr SHARED)
+  set(GOTHIC2VR_XR_SDK "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/openxr-1.1.43")
+  add_library(gothic_openxr SHARED IMPORTED)
+  set_target_properties(gothic_openxr PROPERTIES
+    IMPORTED_LOCATION "${GOTHIC2VR_XR_SDK}/prefab/modules/openxr_loader/libs/android.${ANDROID_ABI}/libopenxr_loader.so"
+    INTERFACE_INCLUDE_DIRECTORIES "${GOTHIC2VR_XR_SDK}/prefab/modules/headers/include")
+  target_compile_definitions(OpenGothic PUBLIC GOTHIC2VR_OPENXR=1)
+  target_include_directories(OpenGothic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/Tempest/Engine"
+    "${ANDROID_NDK}/sources/android/native_app_glue")
+  target_link_libraries(OpenGothic gothic_openxr vulkan)
+  set_target_properties(Gothic2Notr PROPERTIES OUTPUT_NAME "opengothic")
+  target_link_options(Gothic2Notr PRIVATE "$<$<CONFIG:Release>:-Wl,--thinlto-jobs=4>")
+else()
+  add_executable(Gothic2Notr)
+  add_executable(Spacer)
+endif()
+
+if(MSVC)
+  add_definitions(-D_USE_MATH_DEFINES)
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
+  add_definitions(-D_ITERATOR_DEBUG_LEVEL=0)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4800")
+endif()
+
+if(NOT MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wconversion -Wno-strict-aliasing -Werror)
+  if(CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "8.0")
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-class-memaccess)
+  endif()
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "7.1" AND NOT APPLE AND NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-format-truncation)
+  endif()
+  if(UNIX AND NOT ANDROID)
+    # -rdynamic is needed to allow obtaining meaningful backtraces
+    target_link_options(${PROJECT_NAME} PRIVATE -rdynamic)
+  endif()
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU") # gcc
+    # required by pthread_setname_np()
+    add_definitions(-D_GNU_SOURCE)
+  endif()
+endif()
+
+if(WIN32)
+  add_definitions(-DNOMINMAX)
+  if(MSVC)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup" )
+  elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -mwindows -lpthread")
+  else()
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -mwindows -lstdc++fs")
+  endif()
+elseif(IOS)
+  enable_language(OBJCXX)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET 15.0)
+elseif(APPLE)
+  enable_language(OBJCXX)
+endif()
+
+if(IOS)
+  file(GLOB_RECURSE ObjCSOURCES "common/*.mm")
+elseif(APPLE)
+  target_link_libraries(${PROJECT_NAME} "-framework AppKit")
+  file(GLOB_RECURSE ObjCSOURCES "common/*.mm")
+endif()
+
+## OpenGothic
+
+# sources
+file(GLOB_RECURSE OPENGOTHIC_SOURCES CONFIGURE_DEPENDS "common/*.h" "common/*.cpp")
+file(GLOB_RECURSE SPACER_SOURCES "spacer/*.h" "spacer/*.cpp")
+
+target_sources(${PROJECT_NAME} PRIVATE ${OPENGOTHIC_SOURCES} ${ObjCSOURCES})
+
+# shaders
+add_subdirectory(shader)
+target_link_libraries(${PROJECT_NAME} GothicShaders)
+
+# editor icons and such
+if(NOT ANDROID)
+  add_subdirectory(spacer/assets)
+endif()
+
+include_directories("common")
+
+## submodule dependencies
+
+# edd-dbg
+if(WIN32)
+  add_subdirectory(lib/edd-dbg)
+  include_directories(lib/edd-dbg/include)
+  target_link_libraries(${PROJECT_NAME} edd_dbg)
+endif()
+
+if(WIN32)
+  target_link_libraries(${PROJECT_NAME} shlwapi DbgHelp)
+elseif(ANDROID)
+  target_link_libraries(${PROJECT_NAME} android log)
+elseif(UNIX)
+  target_link_libraries(${PROJECT_NAME} -lpthread -ldl)
+endif()
+
+# ZenKit
+set(BUILD_SQUISH_WITH_SSE2     OFF CACHE INTERNAL "")
+set(ZK_ENABLE_ASAN             OFF CACHE INTERNAL "")
+set(ZK_ENABLE_DEPRECATION      OFF CACHE INTERNAL "")
+
+add_subdirectory(lib/ZenKit)
+target_link_libraries(${PROJECT_NAME} zenkit)
+
+# dmusic
+set(DM_BUILD_STATIC            ON  CACHE INTERNAL "")
+set(DM_ENABLE_ASAN             OFF CACHE INTERNAL "")
+
+add_subdirectory(lib/dmusic)
+target_link_libraries(${PROJECT_NAME} dmusic)
+
+# TinySoundFont
+add_definitions(-DTSF_NO_STDIO)
+include_directories(lib/TinySoundFont)
+
+# Rapidjson
+include_directories(lib/rapidjson/include)
+
+# Tempest
+if(WIN32)
+  set(TEMPEST_BUILD_SHARED ON  CACHE INTERNAL "")
+else()
+  set(TEMPEST_BUILD_SHARED OFF CACHE INTERNAL "")
+endif()
+add_subdirectory(lib/Tempest/Engine)
+if(TEMPEST_BUILD_DIRECTX12)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC TEMPEST_BUILD_DIRECTX12)
+endif()
+include_directories(lib/Tempest/Engine/include)
+target_link_libraries(${PROJECT_NAME} Tempest)
+
+# zip
+include_directories(lib/miniz)
+add_definitions(-DMINIZ_NO_STDIO)
+add_library(miniz STATIC EXCLUDE_FROM_ALL "lib/miniz/miniz.h" "lib/miniz/miniz.c")
+target_link_libraries(${PROJECT_NAME} miniz)
+
+# bullet physics
+set(BULLET2_MULTITHREADING       ON  CACHE INTERNAL "")
+set(USE_MSVC_RUNTIME_LIBRARY_DLL ON  CACHE INTERNAL "")
+set(USE_GRAPHICAL_BENCHMARK      OFF CACHE INTERNAL "")
+set(BUILD_BULLET2_DEMOS          OFF CACHE INTERNAL "") # No samples
+set(BUILD_OPENGL3_DEMOS          OFF CACHE INTERNAL "") # No samples
+set(BUILD_UNIT_TESTS             OFF CACHE INTERNAL "") # No tests
+set(BUILD_CPU_DEMOS              OFF CACHE INTERNAL "") # No samples
+set(BUILD_EXTRAS                 OFF CACHE INTERNAL "") # No bugs
+set(GLFW_BUILD_EXAMPLES          OFF CACHE INTERNAL "")
+set(GLFW_BUILD_TESTS             OFF CACHE INTERNAL "")
+set(GLFW_BUILD_DOCS              OFF CACHE INTERNAL "")
+set(BUILD_BULLET3                OFF CACHE INTERNAL "") # Can use bullet2, bullet3 wants to build examples...
+add_subdirectory(lib/bullet3)
+if(NOT MSVC)
+  target_compile_options(BulletDynamics         PRIVATE -Wno-argument-outside-range)
+  target_compile_options(BulletInverseDynamics  PRIVATE -Wno-argument-outside-range)
+  target_compile_options(BulletSoftBody         PRIVATE -Wno-argument-outside-range)
+  target_compile_options(Bullet3Common          PRIVATE -Wno-argument-outside-range)
+  target_compile_options(BulletCollision        PRIVATE -Wno-argument-outside-range)
+  target_compile_options(LinearMath             PRIVATE -Wno-argument-outside-range)
+endif()
+if(NOT MSVC AND NOT APPLE AND NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  target_compile_options(BulletDynamics         PRIVATE -Wno-stringop-overflow)
+  target_compile_options(BulletInverseDynamics  PRIVATE -Wno-stringop-overflow)
+  target_compile_options(BulletSoftBody         PRIVATE -Wno-stringop-overflow)
+  target_compile_options(Bullet3Common          PRIVATE -Wno-stringop-overflow)
+  target_compile_options(BulletCollision        PRIVATE -Wno-stringop-overflow)
+  target_compile_options(LinearMath             PRIVATE -Wno-stringop-overflow)
+endif()
+
+include_directories(lib/bullet3/src)
+target_link_libraries(${PROJECT_NAME} BulletDynamics BulletCollision LinearMath)
+
+# script for launching in binary directory
+if(WIN32)
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/scripts/Gothic2Notr.bat
+        ${CMAKE_CURRENT_BINARY_DIR}/opengothic/Gothic2Notr.bat)
+endif()
+
+# in debug mode, enable sanitizers
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug" AND NOT ANDROID)
+  add_compile_options(-fsanitize=address)
+  add_compile_options(-fsanitize=leak)
+  add_link_options   (-fsanitize=address)
+  add_link_options   (-fsanitize=leak)
+endif()
+
+# the game
+if(IOS)
+  set_directory_properties("${CMAKE_SOURCE_DIR}" PROPERTIES
+    PROPERTY XCODE_STARTUP_PROJECT "Gothic2Notr")
+  set_target_properties(Gothic2Notr PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST "Info.plist.in"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "opengothic.gothic2"
+    MACOSX_BUNDLE_BUNDLE_VERSION 1
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer")
+endif()
+
+target_sources(Gothic2Notr PRIVATE game/main.cpp)
+if(WIN32)
+  target_sources(Gothic2Notr PRIVATE icon.rc)
+endif()
+target_link_libraries(Gothic2Notr PRIVATE OpenGothic)
+if(ANDROID)
+  include(lib/Tempest/Engine/cmake/TempestAndroid.cmake)
+  tempest_android_native_target(Gothic2Notr)
+endif()
+
+# editor
+if(NOT ANDROID)
+  target_sources(Spacer PRIVATE ${SPACER_SOURCES} spacer/main.cpp)
+  target_include_directories(Spacer PRIVATE "spacer")
+  target_link_libraries(Spacer PRIVATE OpenGothic SpacerAssets)
+endif()
+
+# installation
+install(TARGETS ${PROJECT_NAME} DESTINATION bin)

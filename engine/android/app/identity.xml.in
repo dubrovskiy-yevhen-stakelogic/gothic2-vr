@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">@OPENGOTHIC_APP_NAME@</string>
+    <color name="launcher_foreground">@OPENGOTHIC_ICON_COLOR@</color>
+</resources>

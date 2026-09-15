@@ -1,0 +1,95 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes:enable
+
+layout(local_size_x = 64) in;
+
+struct Descriptor
+{
+  uint drawId;
+  uint ptr;
+  uint dispatchSz;
+};
+
+struct DrawIndexedIndirectCommand
+{
+  uint drawId;
+  uint meshCountSrc;
+  uint dispatchX;
+  uint dispatchY;
+  uint dispatchZ;
+  int  vertexOffset;
+  uint lutIterator;
+  uint lutPtr;
+};
+
+layout(binding = 0, std430) restrict buffer EngineInternal0
+{
+  DrawIndexedIndirectCommand indirect[];
+};
+
+layout(binding = 1, std430) restrict buffer EngineInternal1
+{
+  uint       taskletCnt;
+  uint       meshletCnt;
+  uint       iterator;
+  Descriptor desc[];
+} mesh;
+
+layout(binding = 2, std430) restrict buffer EngineInternal2
+{
+  uint       grow;
+  uint       heap[];
+} var;
+
+layout(push_constant, std430) uniform UboPush {
+  uint       indirectRate;
+  uint       indirectCmdCount;
+  };
+
+shared uint workId;
+shared uint lutOffset;
+
+void main() {
+  const uint first = 0;
+  const uint total = mesh.taskletCnt;
+
+  while(true) {
+    [[branch]]
+    if(gl_LocalInvocationIndex==0)
+      workId = atomicAdd(mesh.iterator, 1);
+    barrier();
+
+    const uint at = workId;
+    [[branch]]
+    if(at>=total)
+      break;
+
+    const Descriptor d   = mesh.desc[at+first];
+    const uint       idx = d.drawId*indirectRate;
+    if(indirect[idx].lutPtr==0) {
+      continue;
+      }
+
+    if(gl_LocalInvocationIndex==0) {
+      uint meshlets = atomicAdd(indirect[idx].lutIterator, d.dispatchSz);
+      lutOffset     = meshlets + indirect[idx].lutPtr;
+      }
+    barrier();
+
+    [[loop]]
+    for(uint i=gl_LocalInvocationIndex; i<d.dispatchSz; i+=gl_WorkGroupSize.x) {
+      const uint usrWorkGroup = i;
+      var.heap[lutOffset+i] = (usrWorkGroup << 20u) | (d.ptr & 0xFFFFF);
+      }
+    }
+
+  if(gl_LocalInvocationIndex==0) {
+    const uint maxGroups = (gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z);
+    if(workId+1 == total+maxGroups) {
+      // cleanup
+      mesh.taskletCnt = 0;
+      mesh.iterator   = 0;
+      }
+    }
+  }

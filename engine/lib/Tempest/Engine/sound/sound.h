@@ -1,0 +1,55 @@
+#pragma once
+
+#include <Tempest/IDevice>
+#include <memory>
+#include <string>
+
+namespace Tempest {
+
+class Sound final {
+  public:
+    Sound()=default;
+    Sound(Sound&& s)=default;
+    explicit Sound(const char* path);
+    explicit Sound(const std::string& path);
+    explicit Sound(const char16_t* path);
+    explicit Sound(const std::u16string& path);
+    explicit Sound(IDevice& input);
+
+    bool     isEmpty() const;
+    uint64_t timeLength() const;
+
+  private:
+    struct Header;
+    struct WAVEHeader;
+    struct FmtChunk;
+
+    void                    implLoad(IDevice& input);
+    void                    implLoadWav(IDevice& input, const WAVEHeader& header);
+    void                    implLoadOgg(IDevice& input);
+
+    void                    initData(const char* data, int format, size_t size, size_t rate);
+    void                    initData(std::unique_ptr<char[]> data, int format, size_t size, size_t rate);
+
+    void                    decodeAdPcm(const FmtChunk& fmt, const uint8_t *src, uint32_t dataSize, uint32_t maxSamples);
+    static int              decodeAdPcmBlock(int16_t *outbuf, const uint8_t *inbuf, size_t inbufsize, uint16_t channels);
+
+    struct Data {
+      ~Data();
+      uint32_t                frequency = 0;
+      int32_t                 format    = 0;
+      uint32_t                byteSize  = 0;
+      std::unique_ptr<char[]> ptr;
+
+      uint64_t timeLength() const;
+      };
+    std::shared_ptr<Data> data;
+
+    static const uint16_t stepTable[89];
+    static const int32_t  indexTable[];
+
+  friend class SoundDevice;
+  friend class SoundEffect;
+  };
+
+}

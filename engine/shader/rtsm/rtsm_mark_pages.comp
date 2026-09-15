@@ -1,0 +1,138 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "rtsm/rtsm_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 8) in;
+
+layout(binding = 0, r8)     uniform  image2D    outputImage;
+layout(binding = 1, std140) uniform UboScene    { SceneDesc scene;       };
+layout(binding = 2)         uniform texture2D   gbufDiffuse;
+layout(binding = 3)         uniform utexture2D  gbufNormal;
+layout(binding = 4)         uniform texture2D   depth;
+layout(binding = 7, r32ui)  uniform coherent uimage3D    pageTbl;
+
+ivec2 fragCoord = ivec2(gl_GlobalInvocationID.xy);
+
+ivec3 pageId;
+uint  hiZ = 0xFFFFFFFF;
+
+shared uint pageHiZ[128];
+
+uint pageIdHash7(ivec3 src) {
+  uint x = (src.x & 0x3) << 0;
+  uint y = (src.y & 0x3) << 2;
+  uint z = (src.z & 0x7) << 4;
+  return x | y | z; // 7bit
+  }
+
+void storeHiZValue(uint v) {
+  if(v==0xFFFFFFFF)
+    return;
+  uvec4 dx = unpack565_16(v);
+  ivec3 at = ivec3(dx.xyz);
+  uint  iz = (dx.w << 16);
+  imageAtomicMin(pageTbl, at, iz);
+  }
+
+void storeHiZ() {
+  const uint lane = gl_LocalInvocationIndex;
+
+  if(lane<pageHiZ.length())
+    pageHiZ[lane] = 0xFFFFFFFF;
+  barrier();
+
+  if(hiZ!=0xFFFFFFFF) {
+    ivec3 at  = pageId;
+    uint  iz  = hiZ >> 16;
+    uint  cur = pack565_16(at,iz);
+    uint  id  = pageIdHash7(at) % pageHiZ.length();
+
+    uint  v   = atomicMin(pageHiZ[id], cur);
+    if((v&0xFFFF0000)!=(cur&0xFFFF0000))
+      storeHiZValue(v);
+    }
+  barrier();
+
+  if(lane<pageHiZ.length()) {
+    storeHiZValue(pageHiZ[lane]);
+    }
+  }
+
+void markPage(ivec3 at, float z) {
+  if(z<0 || z>=1)
+    return;
+  pageId = at;
+  hiZ    = floatBitsToUint(z);
+  }
+
+vec4 worldPos(ivec2 frag, float depth) {
+  const vec2 fragCoord = ((frag.xy+0.5)*scene.screenResInv)*2.0 - vec2(1.0);
+  const vec4 scr       = vec4(fragCoord.x, fragCoord.y, depth, 1.0);
+  return scene.viewProjectLwcInv * scr;
+  }
+
+vec3 rayOrigin(const vec4 wpos) {
+  vec4 shPos = scene.viewVirtualShadowLwc * wpos;
+  shPos.xyz /= shPos.w;
+  return shPos.xyz;
+  }
+
+bool calcMipIndex(out vec2 pagePos, out int mip, in vec2 shPos) {
+  float d  = max(abs(shPos.x), abs(shPos.y));
+  uint  id = uint(d);
+  mip = findMSB(id)+1;
+  if(mip>=RTSM_PAGE_MIPS)
+    return false;
+  pagePos = vec2(shPos / (1 << mip));
+  return true;
+  }
+
+float markPages() {
+  const ivec2 size   = textureSize(depth, 0);
+  const bool  valid  = all(lessThan(fragCoord, size));
+  if(!valid)
+    return 0;
+
+  const float z      = texelFetch(depth, fragCoord, 0).x;
+  if(z==1.0)
+    return 0; // make this fragment inactive
+
+  const vec3  normal = normalFetch(gbufNormal, fragCoord);
+  const float lamb   = dot(scene.sunDir, normal);
+  if(lamb <= 0)
+    return 0;
+
+  const vec4  wpos   = worldPos(fragCoord.xy, z) + vec4(normal*NormalBias, 0);
+  if(planetOcclusion(wpos.y/wpos.w, scene.sunDir))
+    return 0;
+
+  const vec4  diff   = texelFetch (gbufDiffuse, fragCoord, 0);
+  if(isGBufFlat(diff.a))
+    return 0;
+
+  const vec3 ray = rayOrigin(wpos);
+  vec2 page = vec2(0);
+  int  mip  = 0;
+  if(!calcMipIndex(page, mip, ray.xy))
+    return lamb;
+
+  ivec2 pageI = ivec2((page.xy*0.5+0.5)*RTSM_PAGE_TBL_SIZE);
+  markPage(ivec3(pageI, mip), ray.z);
+  return lamb;
+  }
+
+void main() {
+  const float val = markPages();
+  storeHiZ();
+
+  const ivec2 size   = textureSize(depth, 0);
+  const bool  valid  = all(lessThan(fragCoord, size));
+  if(valid) {
+    imageStore(outputImage, fragCoord, vec4(val));
+    }
+  }

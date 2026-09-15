@@ -1,0 +1,152 @@
+#pragma once
+
+#include <Tempest/Widget>
+#include <Tempest/Texture2d>
+#include <Tempest/Timer>
+#include <Tempest/Color>
+
+#include <zenkit/DaedalusVm.hh>
+#include <zenkit/addon/daedalus.hh>
+
+#include <memory>
+
+#include "game/savegameheader.h"
+#include "game/questlog.h"
+#include "utils/keycodec.h"
+
+class Gothic;
+class MenuRoot;
+class Npc;
+class GthFont;
+
+class GameMenu : public Tempest::Widget {
+  public:
+    GameMenu(MenuRoot& owner, KeyCodec& keyCodec, zenkit::DaedalusVm& vm, std::string_view menuSection, KeyCodec::Action keyClose);
+    ~GameMenu() override;
+    void resetVm(zenkit::DaedalusVm* vm);
+
+    void setPlayer(const Npc& pl);
+
+    void onKeyboard(KeyCodec::Action k);
+    bool adjustsHorizontally();
+    bool canAdjustValue();
+    void adjustValue(int steps);
+    void onTick();
+    void processMusicTheme();
+    void requestDeleteSave(std::string_view hint);
+    bool canRequestDeleteSave() const;
+    bool isDeletingSave() const { return pendingDelete!=nullptr; }
+    bool closeNestedView();
+    bool overwriteSelectedSave();
+    void renameSelectedSave();
+
+    KeyCodec::Action keyClose() const { return kClose; }
+
+  protected:
+    void paintEvent (Tempest::PaintEvent& event) override;
+    void resizeEvent(Tempest::SizeEvent&  event) override;
+
+  private:
+    enum class QuestStat : uint8_t {
+      Current   = uint8_t(QuestLog::Status::Running),
+      Old       = uint8_t(QuestLog::Status::Failed),
+      Failed    = uint8_t(QuestLog::Status::Success),
+      Log       = uint8_t(5),
+      };
+
+    struct KeyEditDialog;
+    struct SavNameDialog;
+    struct Item {
+      std::string                         name;
+      std::shared_ptr<zenkit::IMenuItem>  handle={};
+      const Tempest::Texture2d*           img=nullptr;
+      SaveGameHeader                      savHdr;
+      Tempest::Pixmap                     savPriview;
+      int32_t                             value   = 0;
+      int32_t                             scroll  = 0;
+      bool                                visible = true;
+      };
+
+    MenuRoot&                             owner;
+    KeyCodec&                             keyCodec;
+    zenkit::DaedalusVm*                   vm = nullptr;
+    Tempest::Timer                        timer;
+    const Tempest::Texture2d*             up   = nullptr;
+    const Tempest::Texture2d*             down = nullptr;
+
+    std::shared_ptr<zenkit::IMenu>        menu={};
+    const Tempest::Texture2d*             back=nullptr;
+    const Tempest::Texture2d*             slider=nullptr;
+    Tempest::Texture2d                    savThumb;
+    std::vector<char>                     textBuf;
+
+    Item                                  hItems[zenkit::IMenu::item_count];
+    Item*                                 ctrlInput = nullptr;
+    Item*                                 pendingDelete = nullptr;
+    Item*                                 journalList = nullptr;
+    Item*                                 journalContent = nullptr;
+    uint32_t                              journalCategory = 0;
+    bool                                  journalContentWasVisible = false;
+    std::string                           deleteName;
+    std::string                           deleteHint;
+    std::string                           deleteError;
+    uint32_t                              curItem=0;
+    bool                                  exitFlag=false;
+    bool                                  closeFlag=false;
+
+    KeyCodec::Action                      kClose = KeyCodec::Escape;
+
+    void                                  drawItem(Tempest::Painter& p, Item& it);
+    void                                  drawSlider(Tempest::Painter& p, Item& it, int x, int y, int w, int h);
+    void                                  drawQuestList(Tempest::Painter& p, Item& it, int x, int y, int w, int h,
+                                                        const QuestLog& log, QuestStat st);
+    void                                  showQuest();
+    void                                  journalInput(KeyCodec::Action key);
+
+    Item*                                 selectedItem();
+    bool                                  selectionIncludes(const Item& item);
+    Item*                                 selectedSaveItem();
+    Item*                                 selectedNextItem(Item* cur);
+    Item*                                 selectedContentItem(Item* it);
+    void                                  setSelection(int cur, int seek=1);
+    void                                  initItems();
+    void                                  initAndroidVideo();
+    void                                  addMissingQuickLoad();
+    void                                  getText(const Item &it, std::vector<char>& out);
+    const GthFont&                        getTextFont(const Item &it);
+
+    static bool                           isSelectable(const std::shared_ptr<zenkit::IMenuItem>& item);
+    static bool                           isHorSelectable(const std::shared_ptr<zenkit::IMenuItem>& item);
+    static bool                           isEnabled(const std::shared_ptr<zenkit::IMenuItem>& item);
+    static bool                           isHidden(const std::shared_ptr<zenkit::IMenuItem>& item);
+
+    void                                  exec         (Item &item, int slideDx, KeyCodec::Action hint);
+    void                                  execSingle   (Item &it,   int slideDx, KeyCodec::Action hint);
+    void                                  execChgOption(Item &item, int slideDx);
+    void                                  execSaveGame (const Item& item);
+    bool                                  execLoadGame (const Item& item);
+    void                                  execCommands (std::string str, bool isClick, KeyCodec::Action hint);
+
+    bool                                  implUpdateSavThumb(Item& sel);
+    static size_t                         saveSlotId(const Item& sel);
+
+    std::string_view                      strEnum(std::string_view en, int id, std::vector<char> &out);
+    size_t                                strEnumSize(std::string_view en);
+
+    void                                  updateValues();
+    void                                  updateItem    (Item &item);
+    void                                  updateSavTitle(Item& sel);
+    void                                  updateSavThumb(Item& sel);
+    void                                  updateVideo();
+    void                                  setDefaultKeys(std::string_view preset);
+
+    static QuestStat                      toStatus(std::string_view str);
+    static bool                           isCompatible(const QuestLog::Quest& q, QuestStat st);
+    static int32_t                        numQuests(const QuestLog* q, QuestStat st);
+
+    void                                  set(std::string_view item, const Tempest::Texture2d* value);
+    void                                  set(std::string_view item, const uint32_t value);
+    void                                  set(std::string_view item, const int32_t  value);
+    void                                  set(std::string_view item, const int32_t  value, const int32_t max);
+    void                                  set(std::string_view item, std::string_view value);
+  };

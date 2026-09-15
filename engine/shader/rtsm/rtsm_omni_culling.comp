@@ -1,0 +1,64 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive    : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#include "rtsm/rtsm_common.glsl"
+#include "scene.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 128) in;
+
+layout(push_constant, std430) uniform Push {
+  float znear;
+  uint  meshletCount;
+  } push;
+layout(binding = 0, std430)          buffer Pos  { uint        alloc;  uint  data[];     } pos;
+layout(binding = 1, std140) uniform  UboScene    { SceneDesc   scene;                    };
+layout(binding = 2, std430)          buffer Rt   { RtsmHeader  header;  uvec2 visList[]; } rtsm;
+layout(binding = 3, std430) readonly buffer Lbo  { LightSource lights[];                 };
+layout(binding = 4, std430)          buffer VId  { uvec4       count;   LightId data[];  } vLights;
+layout(binding = 5, std430) readonly buffer Cbo  { Cluster     clusters[];               };
+
+bool isClusterVisible(const Cluster cluster, const uint clusterId) {
+  bool ret = false;
+  for(uint i=0; i<vLights.count.x; ++i) {
+    const uint        id = vLights.data[i].id;
+    const LightSource lx = lights[id];
+
+    const vec3  dvec = cluster.sphere.xyz - lx.pos;
+    const float dist = cluster.sphere.w   + lx.range;
+    if(dot(dvec, dvec) < dist*dist) {
+      ret = true;
+      }
+    }
+  return ret;
+  }
+
+void mainCulling() {
+  const uint clusterId = gl_GlobalInvocationID.x;
+  if(clusterId>=push.meshletCount)
+    return;
+
+  const Cluster cluster = clusters[clusterId];
+  if(cluster.sphere.w<=0.f)
+    return; // disabled or deleted
+
+  if(cluster.instanceId==0xFFFFFFFF)
+    ;//return;
+
+  if(!isClusterVisible(cluster, clusterId))
+    return;
+
+  const uint id = atomicAdd(rtsm.header.visCount, cluster.meshletCount);
+  for(int i=0; i<cluster.meshletCount; ++i) {
+    rtsm.visList[id+i] = uvec2(clusterId, cluster.firstMeshlet+i);
+    }
+  atomicAdd(pos.alloc, cluster.meshletCount); //reserve memory for position shader
+  }
+
+void main() {
+  if(vLights.count.x==0)
+    return;
+  mainCulling();
+  }

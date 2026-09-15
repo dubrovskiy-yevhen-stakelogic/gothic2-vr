@@ -1,0 +1,245 @@
+#include "../gapi/resourcestate.h"
+
+#include <Tempest/Log>
+
+#include <gtest/gtest.h>
+#include <gmock/gmock-matchers.h>
+#include <sstream>
+
+using namespace testing;
+
+using namespace Tempest;
+using namespace Tempest::Detail;
+
+static std::string toString(SyncStage ss) {
+  std::stringstream text;
+  if((ss & SyncStage::TransferSrc)!=SyncStage::None)
+    text << "TransferSrc | ";
+  if((ss & SyncStage::TransferDst)!=SyncStage::None)
+    text << "TransferDst | ";
+  if((ss & SyncStage::TransferHost)!=SyncStage::None)
+    text << "TransferHost | ";
+  if((ss & SyncStage::Indirect)!=SyncStage::None)
+    text << "Indirect | ";
+  if((ss & SyncStage::GraphicsRead)!=SyncStage::None)
+    text << "GraphicsRead | ";
+  if((ss & SyncStage::GraphicsWrite)!=SyncStage::None)
+    text << "GraphicsWrite | ";
+  if((ss & SyncStage::GraphicsDraw)!=SyncStage::None)
+    text << "GraphicsDraw | ";
+  if((ss & SyncStage::GraphicsDepth)!=SyncStage::None)
+    text << "GraphicsDepth | ";
+  if((ss & SyncStage::ComputeRead)!=SyncStage::None)
+    text << "ComputeRead | ";
+  if((ss & SyncStage::ComputeWrite)!=SyncStage::None)
+    text << "ComputeWrite | ";
+  if((ss & SyncStage::RtAsRead)!=SyncStage::None)
+    text << "RtAsRead | ";
+  if((ss & SyncStage::RtAsWrite)!=SyncStage::None)
+    text << "RtAsWrite | ";
+
+  auto ret = text.str();
+  if(ret.rfind(" | ")==ret.size()-3)
+    ret.resize(ret.size()-3);
+  if(ret.empty())
+    return "SyncStage::None";
+  return ret;
+  }
+
+static std::string toString(ResourceLayout rs) {
+  std::stringstream text;
+  if(rs==ResourceLayout::Default)
+    text << "Default | ";
+  if(rs==ResourceLayout::TransferSrc)
+    text << "TransferSrc | ";
+  if(rs==ResourceLayout::TransferDst)
+    text << "TransferDst | ";
+  if(rs==ResourceLayout::ColorAttach)
+    text << "ColorAttach | ";
+  if(rs==ResourceLayout::DepthAttach)
+    text << "DepthAttach | ";
+
+  auto ret = text.str();
+  if(ret.rfind(" | ")==ret.size()-3)
+    ret.resize(ret.size()-3);
+  return ret;
+  }
+
+struct TestTexture : Tempest::AbstractGraphicsApi::Texture {
+  uint32_t      mipCount() const override { return 1; }
+  NonUniqResId  syncId()   const override { return NonUniqResId(0x1); }
+  };
+
+struct TestCommandBuffer : Tempest::AbstractGraphicsApi::CommandBuffer {
+  void beginRendering(const FrameBufferDesc& fbo, size_t fboSize, uint32_t width, uint32_t height) override {}
+  void endRendering() override {}
+
+  void barrier(const AbstractGraphicsApi::SyncDesc& d, const AbstractGraphicsApi::BarrierDesc* desc, size_t cnt) override;
+
+  void generateMipmap(AbstractGraphicsApi::Texture& image, uint32_t texWidth, uint32_t texHeight, uint32_t mipLevels) override {}
+  void copy(AbstractGraphicsApi::Buffer& dest, size_t offset, AbstractGraphicsApi::Texture& src, uint32_t width, uint32_t height, uint32_t mip) override {}
+
+  bool isRecording() const override { return true; }
+  void begin() override {}
+  void end() override {}
+  void reset() override {}
+
+  void setPipeline(AbstractGraphicsApi::Pipeline& p) override {}
+  void setComputePipeline(AbstractGraphicsApi::CompPipeline& p) override {}
+
+  void setPushData(const void* data, size_t size) override {}
+  void setBinding (size_t id, AbstractGraphicsApi::Texture *tex, uint32_t mipLevel, const ComponentMapping&, const Sampler& smp) override {}
+  void setBinding (size_t id, AbstractGraphicsApi::Buffer* buf, size_t offset) override {}
+  void setBinding (size_t id, AbstractGraphicsApi::DescArray* arr) override {}
+  void setBinding (size_t id, AbstractGraphicsApi::AccelerationStructure* tlas) override {}
+  void setBinding (size_t id, const Sampler& smp) override {}
+
+  void setViewport(const Rect& r) override {}
+  void setScissor (const Rect& r) override {}
+  void setDebugMarker(std::string_view tag) override {}
+
+  void draw        (const AbstractGraphicsApi::Buffer* vbo, size_t stride, size_t offset, size_t vertexCount,
+            size_t firstInstance, size_t instanceCount) override {}
+  void drawIndexed (const AbstractGraphicsApi::Buffer* vbo, size_t stride, size_t voffset,
+                    const AbstractGraphicsApi::Buffer& ibo, Detail::IndexClass cls, size_t ioffset, size_t isize,
+                   size_t firstInstance, size_t instanceCount) override {}
+  void drawIndirect(const AbstractGraphicsApi::Buffer& indirect, size_t offset) override {}
+
+  void dispatch    (size_t x, size_t y, size_t z) override {}
+  void dispatchIndirect(const AbstractGraphicsApi::Buffer& indirect, size_t offset) override {}
+  };
+
+void TestCommandBuffer::barrier(const AbstractGraphicsApi::SyncDesc& d, const AbstractGraphicsApi::BarrierDesc* desc, size_t cnt) {
+  Log::d("---");
+  for(size_t i=0; i<cnt; ++i) {
+    auto& d    = desc[i];
+    auto  prev = toString(d.prev);
+    if(d.discard)
+      prev = "Discard";
+    Log::d("transition {", prev, " -> ", toString(d.next), "}");
+    }
+
+  if(d.next!=SyncStage::None) {
+    Log::d("barrier {", toString(d.prev), " -> ", toString(d.next), "}");
+    }
+  }
+
+TEST(main, ResourceStateBasic) {
+  TestTexture       t;
+  TestCommandBuffer cmd;
+
+  ResourceState rs;
+  rs.setLayout(t, ResourceLayout::ColorAttach, 0, true);
+  rs.flush(cmd);
+  rs.setLayout(t, ResourceLayout::Default, 0, false);
+  rs.flush(cmd);
+  }
+
+TEST(main, ResourceStateJoin) {
+  TestTexture       t;
+  TestCommandBuffer cmd;
+
+  {
+    ResourceState rs;
+    rs.onUavUsage(NonUniqResId::I_None, NonUniqResId(0x1), PipelineStage::S_Compute);
+    rs.flush(cmd);
+
+    rs.joinWriters(PipelineStage::S_Indirect);
+    rs.joinWriters(PipelineStage::S_Graphics);
+    rs.flush(cmd);
+  }
+  {
+    ResourceState rs;
+    rs.onUavUsage(NonUniqResId::I_None, NonUniqResId(0x1), PipelineStage::S_RtAs);
+    rs.flush(cmd);
+
+    rs.joinWriters(PipelineStage::S_Indirect);
+    rs.joinWriters(PipelineStage::S_Graphics);
+    rs.flush(cmd);
+    rs.onUavUsage(NonUniqResId(0x1), NonUniqResId::I_None, PipelineStage::S_Graphics);
+
+    rs.joinWriters(PipelineStage::S_Indirect);
+    rs.joinWriters(PipelineStage::S_Graphics);
+    rs.flush(cmd);
+  }
+  }
+
+TEST(main, ResourceStateTranfer) {
+  TestCommandBuffer cmd;
+
+  ResourceState rs;
+  rs.onTranferUsage(NonUniqResId::I_None, NonUniqResId(0x1), false);
+  rs.flush(cmd);
+
+  rs.onTranferUsage(NonUniqResId::I_None, NonUniqResId(0x1), false);
+  rs.flush(cmd);
+
+  rs.onUavUsage(NonUniqResId(0x1), NonUniqResId::I_None, PipelineStage::S_Compute);
+  rs.flush(cmd);
+  }
+
+TEST(main, ResourceStateBlas) {
+  TestCommandBuffer cmd;
+
+  ResourceState rs;
+
+  rs.onUavUsage(NonUniqResId::I_None, NonUniqResId(0x1), PipelineStage::S_RtAs);
+  rs.flush(cmd);
+
+  rs.onUavUsage(NonUniqResId(0x1), NonUniqResId::I_None, PipelineStage::S_Compute);
+  rs.flush(cmd);
+  }
+
+TEST(main, ResourceStateIndirect) {
+  TestCommandBuffer cmd;
+
+  ResourceState rs;
+
+  rs.onUavUsage(NonUniqResId::I_None, NonUniqResId(0x1), PipelineStage::S_Compute);
+  rs.flush(cmd);
+
+  rs.onUavUsage(NonUniqResId(0x1), NonUniqResId::I_None, PipelineStage::S_Indirect);
+  rs.flush(cmd);
+  }
+
+TEST(main, ResourceStateIndirectAndUAVWithSubsequentWriteAccess) {
+  TestCommandBuffer cmd;
+
+  ResourceState rs;
+
+  rs.onUavUsage(NonUniqResId::I_None, NonUniqResId(0x1), PipelineStage::S_Compute);
+  rs.flush(cmd);
+
+  rs.onUavUsage(NonUniqResId(0x1), NonUniqResId::I_None, PipelineStage::S_Compute);
+  rs.onUavUsage(NonUniqResId(0x1), NonUniqResId::I_None, PipelineStage::S_Indirect);
+  rs.flush(cmd);
+
+  rs.onUavUsage(NonUniqResId::I_None, NonUniqResId(0x1), PipelineStage::S_Compute);
+  rs.flush(cmd);
+  }
+
+TEST(main, ResourceDrawAfterDraw) {
+  TestTexture       t;
+  TestCommandBuffer cmd;
+
+  FrameBufferDesc fbo = {};
+  fbo.att [0] = &t;
+  fbo.frm [0] = TextureFormat::RGBA8;
+  fbo.desc[0].load  = AccessOp::Clear;
+  fbo.desc[0].store = AccessOp::Preserve;
+
+  ResourceState rs;
+  rs.beginRendering(cmd, fbo);
+  rs.flush(cmd);
+  rs.endRendering(cmd);
+
+  fbo.desc[0].load  = AccessOp::Preserve;
+  fbo.desc[0].store = AccessOp::Preserve;
+  rs.beginRendering(cmd, fbo);
+  rs.flush(cmd);
+  rs.endRendering(cmd);
+
+  rs.finalize(cmd);
+  }
+
+

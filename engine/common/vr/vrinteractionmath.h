@@ -159,6 +159,14 @@ inline bool assignHolsterItem(HolsterSettings& settings,int point,std::string na
     if(i!=point && settings.items[size_t(i)]==name)settings.items[size_t(i)]=previous==name?"EMPTY":previous;
   settings.items[size_t(point)]=std::move(name);return true;
 }
+inline int holsterPointForPickup(bool melee,bool ranged) { return melee?0:ranged?2:-1; }
+// Free: "", "EMPTY" or an unowned item; items already assigned keep their holster.
+inline bool holsterFreeForPickup(const HolsterSettings& settings,int point,const std::string& name,bool pointOwned) {
+  if(point<0 || point>=4 || name.empty())return false;
+  for(const auto& assigned:settings.items)if(assigned==name)return false;
+  const auto& current=settings.items[size_t(point)];
+  return current.empty() || current=="EMPTY" || !pointOwned;
+}
 inline bool swapHolsterItems(HolsterSettings& settings,int from,int to) {
   if(from<0 || from>=4 || to<0 || to>=4 || from==to)return false;
   std::swap(settings.items[size_t(from)],settings.items[size_t(to)]);return true;

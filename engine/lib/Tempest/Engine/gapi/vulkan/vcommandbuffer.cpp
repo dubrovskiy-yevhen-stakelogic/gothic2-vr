@@ -403,7 +403,9 @@ void VCommandBuffer::setPipeline(AbstractGraphicsApi::Pipeline& p) {
 
     auto rp   = (passRp!=nullptr ? passRp->pass : VK_NULL_HANDLE);
     auto inst = px.instance(passDyn, rp, VK_NULL_HANDLE, px.defaultStride, passDyn.fdm);
-    vkCmdBindPipeline(impl, VK_PIPELINE_BIND_POINT_GRAPHICS, inst);
+    pipelinePending = (inst==VK_NULL_HANDLE);
+    if(!pipelinePending)
+      vkCmdBindPipeline(impl, VK_PIPELINE_BIND_POINT_GRAPHICS, inst);
 
     pushData.durty  = pushData.durty || px.pb.size!=prevPushSize;
     bindings.durty  = bindings.durty || px.pb.size!=prevPushSize;
@@ -417,6 +419,7 @@ void VCommandBuffer::setPipeline(AbstractGraphicsApi::Pipeline& p) {
   curDrawPipeline = &px;
   vboStride       = px.defaultStride;
   pipelineLayout  = VK_NULL_HANDLE; // clear until draw
+  pipelinePending = false;
   }
 
 void VCommandBuffer::setComputePipeline(AbstractGraphicsApi::CompPipeline& p) {
@@ -597,7 +600,9 @@ void VCommandBuffer::implSetUniforms(const PipelineStage st) {
     auto& pso  = *curDrawPipeline;
     auto  rp   = (passRp!=nullptr ? passRp->pass : VK_NULL_HANDLE);
     auto  inst = pso.instance(passDyn, rp, pipelineLayout, vboStride, passDyn.fdm);
-    vkCmdBindPipeline(impl, bindPoint, inst);
+    pipelinePending = (inst==VK_NULL_HANDLE);
+    if(!pipelinePending)
+      vkCmdBindPipeline(impl, bindPoint, inst);
     pushData.durty = true;
     }
   else if(pLay!=pipelineLayout && st==PipelineStage::S_Compute) {
@@ -686,6 +691,8 @@ void VCommandBuffer::draw(const AbstractGraphicsApi::Buffer* ivbo, size_t stride
     }
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
+  if(pipelinePending)
+    return;
   vkCmdDraw(impl, uint32_t(vsize), uint32_t(instanceCount), uint32_t(voffset), uint32_t(firstInstance));
   }
 
@@ -701,6 +708,8 @@ void VCommandBuffer::drawIndexed(const AbstractGraphicsApi::Buffer* ivbo, size_t
   vkCmdBindIndexBuffer(impl, ibo.impl, 0, nativeFormat(cls));
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
+  if(pipelinePending)
+    return;
   vkCmdDrawIndexed    (impl, uint32_t(isize), uint32_t(instanceCount), uint32_t(ioffset), int32_t(voffset), uint32_t(firstInstance));
   }
 
@@ -712,12 +721,16 @@ void VCommandBuffer::drawIndirect(const AbstractGraphicsApi::Buffer& indirect, s
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
   //resState.flush(*this);
+  if(pipelinePending)
+    return;
   vkCmdDrawIndirect(impl, ind.impl, VkDeviceSize(offset), 1, 0);
   }
 
 void VCommandBuffer::dispatchMesh(size_t x, size_t y, size_t z) {
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
+  if(pipelinePending)
+    return;
   device.vkCmdDrawMeshTasks(impl, uint32_t(x), uint32_t(y), uint32_t(z));
   }
 
@@ -732,6 +745,8 @@ void VCommandBuffer::drawIndexedIndirect(const AbstractGraphicsApi::Buffer& iibo
   vkCmdBindIndexBuffer(impl,ibo.impl,0,nativeFormat(cls));
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
+  if(pipelinePending)
+    return;
   vkCmdDrawIndexedIndirect(impl,ind.impl,VkDeviceSize(offset),uint32_t(count),uint32_t(stride));
   }
 
@@ -750,6 +765,8 @@ void VCommandBuffer::drawIndexedIndirectCount(const AbstractGraphicsApi::Buffer&
   vkCmdBindIndexBuffer(impl,ibo.impl,0,nativeFormat(cls));
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
+  if(pipelinePending)
+    return;
   device.vkCmdDrawIndexedIndirectCount(impl,ind.impl,VkDeviceSize(offset),cnt.impl,VkDeviceSize(countOffset),
                                      uint32_t(maxCount),uint32_t(stride));
   }
@@ -762,6 +779,8 @@ void VCommandBuffer::dispatchMeshIndirect(const AbstractGraphicsApi::Buffer& ind
   implSetUniforms(PipelineStage::S_Graphics);
   implSetPushData(PipelineStage::S_Graphics);
   //resState.flush(*this);
+  if(pipelinePending)
+    return;
   device.vkCmdDrawMeshTasksIndirect(impl, ind.impl, VkDeviceSize(offset), 1, 0);
   }
 

@@ -42,7 +42,7 @@ int main() {
   in.leftGrip=in.rightGrip=in.menu=true;
   test(step()&&menu.visible,"chord opens VR menu and consumes input");
   test(step()&&menu.visible,"held chord cannot retoggle"); release();
-  test(menu.rows().size()==10 && menu.row()==Vr::Menu::Locomotion,"main menu exposes submenus");
+  test(menu.rows().size()==11 && menu.row()==Vr::Menu::Locomotion,"main menu exposes submenus");
   in.a=true; step(); test(menu.page==Vr::Menu::Page::Locomotion&&!menu.changed,"A enters locomotion without changing settings");
   step(); test(menu.settings.turn==Vr::TurnMode::Snap,"held A on entry cannot change turn mode"); release();
   in.a=true; step(); test(menu.settings.turn==Vr::TurnMode::Smooth && menu.changed,"A changes selected setting");

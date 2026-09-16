@@ -68,6 +68,16 @@ bool MainWindow::tickVrMenu(const GamepadState& pad,uint64_t now) {
     }
     clearInput();
   }
+  else if(vrMenu.action==Vr::Menu::OpenCharacterStats) {
+    vrGameplay.suspend();
+    if(auto player=Gothic::inst().player(); player && !player->isDown() && !dialogs.isActive() &&
+       Gothic::inst().checkLoading()==Gothic::LoadState::Idle) {
+      if(inventory.isActive() || inventory.isWheelOpen())inventory.close();
+      rootMenu.setMenu("MENU_STATUS",KeyCodec::Status);
+      rootMenu.setPlayer(*player);
+    }
+    clearInput();
+  }
   else if(vrMenu.action>=0) vrGameplay.queue(vrMenu.action,vrMenu.actionDirection,vrMenu.action==Vr::Menu::CalHolstered?vrMenu.holsterPoint:(vrMenu.calibrationPage()?vrMenu.calibrationHand:vrMenu.holsterPoint));
   if(vrMenu.changed) {
     vrSaveFailed=!vrMenu.settings.save();
@@ -130,7 +140,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
     const int top=std::max(0,(h()-line*12)/2);
     p.setBrush(Color(.025f,.035f,.055f,.97f));p.drawRect(x,top,width,line*12);
     int y=top+line;
-    for(const char* row:{"Welcome to Gothic II VR 0.1.0 Alpha", "",
+    for(const char* row:{"Welcome to Gothic II VR 0.1.1 Alpha", "",
         "This is a very early version of the VR mod.",
         "The game cannot yet be completed in VR.",
         "Many features are unfinished or do not work yet.",
@@ -317,7 +327,18 @@ void MainWindow::renderVr() {
         drain(hudFence);
       }
       const double start=Vr::milliseconds(); xr.endFrame(world,complete,overlay,distance);
-      profile.current.end=Vr::milliseconds()-start; if(complete) profile.finish();
+      profile.current.end=Vr::milliseconds()-start;
+      {
+        // log per-phase timings of frames longer than 250 ms
+        static double lastFrameEnd=0;
+        const double now=Vr::milliseconds(),gap=lastFrameEnd>0?now-lastFrameEnd:0;
+        lastFrameEnd=complete && xr.focused() ? now : 0;
+        const auto& c=profile.current;
+        if(gap>250) Tempest::Log::e("VR stall frame=",int(gap)," ms wait=",int(c.wait)," priorGpuWait=",int(c.priorGpuWait),
+          " tick=",int(c.tick)," simulation=",int(c.simulation)," cpuStage=",int(c.cpuStage)," recordL=",int(c.record[0])," recordR=",int(c.record[1]),
+          " ui=",int(c.ui)," end=",int(c.end)," complete=",int(complete)," focused=",int(xr.focused()));
+      }
+      if(complete) profile.finish();
       else {
         try { if(profile.pendingHud()) profile.collectPendingHud(hudCommands->gpuTimings(),xr.copyGpuMs(2)); profile.collectPendingGpu([&](uint8_t slot) { auto m=commands[slot].gpuTimings(); if(!prepRecorded[slot]) return m; auto t=prepCommands[slot].gpuTimings(); t.insert(t.end(),m.begin(),m.end()); return t; }); }
         catch(...) { profile.finalizePending(); }

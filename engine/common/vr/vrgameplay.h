@@ -46,6 +46,8 @@ class Gameplay {
     std::vector<ReturnItem> returning;
     std::array<Held,2> held;
     std::array<ReleaseMotion,2> releaseMotion;
+    std::array<ReleaseDebounce,2> releaseDebounce;
+    uint64_t releaseFrame=0,releaseBlockedUntil=0;
     std::array<ButtonEdge,2> grips,triggers;
     std::array<int,2> hovered={-1,-1};
     std::vector<Action> actions;
@@ -67,7 +69,7 @@ class Gameplay {
     Npc* hudTargetNpc=nullptr;
     World* hudTargetWorld=nullptr;
     Npc* recentTarget=nullptr;
-    uint64_t targetUntil=0,twoHandNoticeAfter=0;
+    uint64_t targetUntil=0,twoHandNoticeAfter=0,requirementNoticeAfter=0;
     void rememberTarget(Npc* target,uint64_t now) { recentTarget=target;targetUntil=now+4000; }
     uint64_t roofCheck=0;
     Vec3 roofPosition;
@@ -77,6 +79,7 @@ class Gameplay {
     void catalog(World& world);
     std::vector<const Entry*> filtered(bool npc) const;
     bool seedRangedDefaults(HolsterSettings& settings) const;
+    bool autoHolsterPickup(Npc& player,HolsterSettings& settings,size_t id,uint64_t now);
     bool actionsTick(World& world,Menu& menu,uint64_t now,QuestXr& xr,const Matrix& base);
     const Item* resolve(Npc& player,int slot,const HolsterSettings& settings) const;
     static bool compatible(const Item& item,int slot);

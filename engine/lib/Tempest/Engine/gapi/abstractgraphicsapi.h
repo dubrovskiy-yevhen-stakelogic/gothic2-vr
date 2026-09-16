@@ -392,6 +392,9 @@ namespace Tempest {
     public:
       virtual ~AbstractGraphicsApi()=default;
 
+      // thread-local: pipelines created while set may compile asynchronously (draws skipped until ready)
+      static bool& asyncPipelineCreation();
+
       class Props {
         public:
           char       name[256] = {};

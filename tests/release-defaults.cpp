@@ -8,7 +8,7 @@ int main() {
   std::istringstream input(Vr::ReleaseDefaults);
   fresh.read(input);
   if(fresh.welcomeSeen || fresh.profiler || !fresh.interaction.pickupHighlight ||
-     !fresh.interaction.ignoreWeaponRequirements || std::abs(fresh.hudX-.225f)>.0001f ||
+     fresh.interaction.ignoreWeaponRequirements || std::abs(fresh.hudX-.225f)>.0001f ||
      std::abs(fresh.hudDistance-2.5f)>.0001f) return EXIT_FAILURE;
   std::ostringstream saved;
   fresh.write(saved);

@@ -75,7 +75,7 @@ QuestXr::QuestXr() {
     XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO}; info.next=&android;
     std::strcpy(info.applicationInfo.applicationName,"Gothic II VR");
     std::strcpy(info.applicationInfo.engineName,"OpenGothic Tempest");
-    info.applicationInfo.applicationVersion=60; info.applicationInfo.engineVersion=1;
+    info.applicationInfo.applicationVersion=61; info.applicationInfo.engineVersion=1;
     info.applicationInfo.apiVersion=XR_MAKE_VERSION(1,0,34);
     info.enabledExtensionCount=uint32_t(extensions.size()); info.enabledExtensionNames=extensions.data();
     check(xrCreateInstance(&info,&instance),"create instance");

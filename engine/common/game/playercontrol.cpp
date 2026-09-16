@@ -466,16 +466,31 @@ void PlayerControl::controllerInteract(bool sheath) {
   if(w==nullptr || pl==nullptr || pl->isDown()) return;
   if(pl->weaponState()!=WeaponState::NoWeapon) {
     if(!sheath) return;
-    pendingInteraction=w->findFocus(*pl,Focus(),true);
+    pendingInteraction=w->findFocus(*pl,w->validateFocus(currentFocus),true);
     pendingInteractionUntil=w->tickCount()+3000;
     controllerTarget=nullptr;
     wctrl[WeaponClose]=true;
     return;
     }
-  auto f=w->findFocus(Focus());
-  if(f.item) interact(*f.item);
-  else if(f.interactive) interact(*f.interactive);
-  else if(f.npc) interact(*f.npc);
+  // prefer retained focus: head jitter breaks a fresh search
+  auto f=w->validateFocus(currentFocus);
+  if(!f)
+    f=w->findFocus(Focus());
+  if(!interactFocus(f) && f.npc!=nullptr && !f.npc->isDown()) {
+    // dialog requires standing: retry while stopping
+    pendingInteraction=f;
+    pendingInteractionUntil=w->tickCount()+1500;
+    }
+  }
+
+bool PlayerControl::interactFocus(const Focus& f) {
+  if(f.item)
+    return interact(*f.item);
+  if(f.interactive)
+    return interact(*f.interactive);
+  if(f.npc)
+    return interact(*f.npc);
+  return false;
   }
 
 void PlayerControl::controllerEquip(size_t item,bool toggleDraw) {
@@ -563,15 +578,14 @@ void PlayerControl::tickFocus() {
 
   if(pendingInteractionUntil!=0 && w!=nullptr && pl!=nullptr) {
     const auto valid=w->validateFocus(pendingInteraction);
-    const auto now=w->findFocus(*pl,Focus(),true);
+    const auto now=w->findFocus(*pl,valid,true);
     if(w->tickCount()>pendingInteractionUntil || pl->isDown() ||
        valid.item!=pendingInteraction.item || valid.npc!=pendingInteraction.npc || valid.interactive!=pendingInteraction.interactive ||
        now.item!=pendingInteraction.item || now.npc!=pendingInteraction.npc || now.interactive!=pendingInteraction.interactive) {
       pendingInteractionUntil=0;
       }
-    else if(pl->weaponState()==WeaponState::NoWeapon && canInteract()) {
+    else if(pl->weaponState()==WeaponState::NoWeapon && canInteract() && interactFocus(valid)) {
       pendingInteractionUntil=0;
-      controllerInteract(false);
       }
     }
 
@@ -861,7 +875,8 @@ Focus PlayerControl::findFocus(const Focus* prev) const {
     return Focus();
   if(c!=nullptr && c->isCutscene())
     return Focus();
-  if(!cacheFocus)
+  // VR gaze retains the previous focus
+  if(!cacheFocus && !w->isVrGaze())
     prev = nullptr;
 
   if(prev)

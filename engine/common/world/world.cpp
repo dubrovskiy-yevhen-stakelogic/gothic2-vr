@@ -439,12 +439,26 @@ Focus World::findFocus(const Npc &pl, const Focus& def, bool unarmed) {
     }
 
   auto n     = policy.npc_prio <0 ? nullptr : wobj.findNpcNear    (pl,def.npc,        optNpc);
-  auto it    = policy.item_prio<0 ? nullptr : wobj.findItem       (pl,def.item,       optItm);
-  auto inter = policy.mob_prio <0 ? nullptr : wobj.findInteractive(pl,def.interactive,optMob);
+  // under VR gaze items and mobs are always re-selected by gaze distance
+  auto it    = policy.item_prio<0 ? nullptr : wobj.findItem       (pl,optItm.gaze ? nullptr : def.item,       optItm);
+  auto inter = policy.mob_prio <0 ? nullptr : wobj.findInteractive(pl,optMob.gaze ? nullptr : def.interactive,optMob);
   auto ws = unarmed ? WeaponState::NoWeapon : pl.weaponState();
   if(ws==WeaponState::Bow || ws==WeaponState::CBow) {
     optMob.flags = WorldObjects::SearchFlg(optMob.flags | WorldObjects::FcOverride | WorldObjects::NoRay);
     inter = wobj.findInteractive(pl,def.interactive,optMob);
+    }
+
+  if(optNpc.gaze && ws==WeaponState::NoWeapon && n!=nullptr && (it!=nullptr || inter!=nullptr)) {
+    // VR gaze: prefer an item or mob clearly closer to the gaze center than the NPC
+    const float npcTan = WorldObjects::gazeTangent(*n,vrGazeHead,vrGazeDirection);
+    const float itTan  = it   ==nullptr ? -1 : WorldObjects::gazeTangent(*it,   vrGazeHead,vrGazeDirection);
+    const float mobTan = inter==nullptr ? -1 : WorldObjects::gazeTangent(*inter,vrGazeHead,vrGazeDirection);
+    const bool  itWins = itTan >=0 && itTan +.02f<npcTan;
+    const bool  mobWins= mobTan>=0 && mobTan+.02f<npcTan;
+    if(itWins && (!mobWins || itTan<=mobTan))
+      return Focus(*it);
+    if(mobWins)
+      return Focus(*inter);
     }
 
   if(policy.npc_prio>=policy.item_prio &&

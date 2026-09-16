@@ -1,5 +1,10 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+
 #include <Tempest/AbstractGraphicsApi>
 #include <Tempest/RenderState>
 #include <vector>
@@ -43,6 +48,7 @@ class VPipeline : public AbstractGraphicsApi::Pipeline {
 
     VkPipelineLayout   pipelineLayout = VK_NULL_HANDLE;
     uint32_t           defaultStride  = 0;
+    const bool         allowAsync     = AbstractGraphicsApi::asyncPipelineCreation();
 
     VkPipeline         instance(const VkPipelineRenderingCreateInfoKHR& info, VkRenderPass pass, VkPipelineLayout pLay, size_t stride, bool fdm = false);
 
@@ -79,6 +85,22 @@ class VPipeline : public AbstractGraphicsApi::Pipeline {
     SpinLock                               syncInst;
     std::vector<InstRp>                    instRp;
     std::vector<InstDr>                    instDr;
+
+    struct AsyncJob {
+      VkPipelineRenderingCreateInfoKHR info = {};
+      VkFormat                         colorFrm[MaxFramebufferAttachments] = {};
+      VkPipelineLayout                 pLay   = VK_NULL_HANDLE;
+      size_t                           stride = 0;
+      bool                             fdm    = false;
+      };
+    struct AsyncState {
+      std::mutex                           sync;
+      std::condition_variable              idle;
+      size_t                               running   = 0;
+      bool                                 cancelled = false;
+      };
+    void                                   compileAsync(const AsyncJob& job);
+    std::shared_ptr<AsyncState>            asyncState = std::make_shared<AsyncState>();
 
     const VShader*                         findShader(ShaderReflection::Stage sh) const;
     void                                   cleanup();

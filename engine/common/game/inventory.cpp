@@ -920,8 +920,11 @@ void Inventory::invalidateCond(Npc &owner) {
   invalidateCond(amulet,owner);
   invalidateCond(ringL ,owner);
   invalidateCond(ringR ,owner);
-  invalidateCond(melee ,owner);
-  invalidateCond(range ,owner);
+  // VR keeps unqualified weapons equipped (damage is penalized instead)
+  if(!owner.keepsUnqualifiedWeaponsVr()) {
+    invalidateCond(melee ,owner);
+    invalidateCond(range ,owner);
+    }
   invalidateCond(shield,owner);
   for(auto& i:numslot)
     invalidateCond(i,owner);

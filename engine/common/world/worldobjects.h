@@ -127,6 +127,9 @@ class WorldObjects final {
     Interactive*   findInteractive(const Npc& pl, Interactive *def, const SearchOpt& opt);
     Npc*           findNpcNear    (const Npc& pl, Npc* def, const SearchOpt& opt);
     Item*          findItem       (const Npc& pl, Item* def, const SearchOpt& opt);
+    static float   gazeTangent    (const Npc& npc, Tempest::Vec3 head, Tempest::Vec3 direction);
+    static float   gazeTangent    (const Item& item, Tempest::Vec3 head, Tempest::Vec3 direction);
+    static float   gazeTangent    (const Interactive& mob, Tempest::Vec3 head, Tempest::Vec3 direction);
 
     void           marchInteractives(DbgPainter& p) const;
     void           marchCsCameras   (DbgPainter& p) const;

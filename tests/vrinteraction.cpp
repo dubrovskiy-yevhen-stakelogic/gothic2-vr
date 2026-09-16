@@ -208,6 +208,40 @@ int main() {
   test(releaseAction(true,true,0,true,true)==ReleaseAction::Stow,"locked item stows when open grip reaches its holster");
   test(releaseAction(true,true,.8f,false,true)==ReleaseAction::Keep,"closed grip does not stow during draw");
   test(releaseAction(false,true,0,false,false)==ReleaseAction::Keep && releaseAction(true,false,0,false,false)==ReleaseAction::Keep,"menu and lost tracking cannot release inventory");
+  test(penalizedDamage(40,true)==40 && penalizedDamage(40,false)==10 && penalizedDamage(0,false)==0,"weapons past their requirements deal a quarter of their damage");
+  {
+    HolsterSettings pickup;pickup.items={"ITMW_2H_AXE_L_01","EMPTY","EMPTY","ITRW_ARROW"};
+    test(holsterPointForPickup(true,false)==0 && holsterPointForPickup(false,true)==2 && holsterPointForPickup(false,false)==-1,"melee pickups go to the right belt and bows to the back left");
+    test(holsterFreeForPickup(pickup,2,"ITRW_BOW_L_01",false),"empty back-left holster accepts a picked-up bow");
+    test(!holsterFreeForPickup(pickup,0,"ITMW_1H_MACE_L_01",true),"owned weapon already on the belt keeps its holster");
+    test(holsterFreeForPickup(pickup,0,"ITMW_1H_MACE_L_01",false),"belt assignment of an item no longer owned is free");
+    pickup.items[1]="ITRW_BOW_L_01";test(!holsterFreeForPickup(pickup,2,"ITRW_BOW_L_01",false),"an item the player placed elsewhere keeps that holster");
+    pickup.items[0]="";test(holsterFreeForPickup(pickup,0,"ITMW_1H_MACE_L_01",true),"automatic belt selection is replaced by the picked-up weapon");
+  }
+  {
+    ReleaseDebounce debounce;
+    test(!debounce.confirm(true,1000,0,{3,0,0}),"first open grip frame does not release");
+    test(!debounce.confirm(false,1014,0,{}),"closed grip frame cancels a pending release");
+    test(!debounce.confirm(true,1028,0,{1,0,0}) && !debounce.confirm(true,1056,0,{0,0,0}),"release waits for the confirm window");
+    test(debounce.confirm(true,1070,0,{0,0,0}) && (debounce.velocity-Vec3(1,0,0)).length()<.001f,"sustained open grip releases with first-frame throw velocity");
+    debounce.reset();
+    test(!debounce.confirm(true,3000,3300,{}) && !debounce.confirm(true,3290,3300,{}),"releases are blocked after a frame stall");
+    test(!debounce.confirm(true,3300,3300,{}) && debounce.confirm(true,3340,3300,{}),"release resumes once the stall block expires");
+  }
+  {
+    const Vec3 eye{0,170,0},feet{0,0,200},top{0,180,200};
+    auto aim=[&](Vec3 p){return normalized(p-eye);};
+    test(npcGazeScore(eye,aim({0,165,200}),feet,top,false)>=0,"looking at an NPC face two metres away selects it");
+    test(npcGazeScore(eye,aim({0,110,200}),feet,top,false)>=0 && npcGazeScore(eye,aim({0,40,200}),feet,top,false)>=0,"chest and legs select the NPC");
+    test(npcGazeScore(eye,aim({0,165,300}),{0,0,300},{0,180,300},false)>=0,"face at three metres selects the NPC");
+    test(npcGazeScore(eye,aim({120,165,200}),feet,top,false)<0,"thirty degrees to the side does not select");
+    const auto jitter=aim({75,165,200});
+    test(npcGazeScore(eye,jitter,feet,top,false)<0 && npcGazeScore(eye,jitter,feet,top,true)>=0,"retained NPC survives gaze drift beyond the acquire cone");
+    test(npcGazeScore(eye,aim({0,165,-200}),feet,top,true)<0,"NPC behind the head is never selected");
+    Vec3 probes[3];size_t count=0;
+    test(npcGazeScore(eye,aim({0,165,200}),feet,top,false,probes,&count)>=0 && count>=2,"face gaze provides extra line-of-sight probes");
+    test(npcGazeScore(eye,aim({0,165,200}),feet,top,false)<npcGazeScore(eye,aim({40,165,200}),feet,top,false),"closer to gaze centre scores better");
+  }
   test(gazeScore({},{0,0,1},{0,0,100})>=0 && gazeScore({},{0,0,1},{15,0,100})>=0,"gaze cone selects both exact ray and nearby small item");
   test(gazeScore({},{0,0,1},{60,0,100})<0 && gazeScore({},{0,0,1},{0,0,-100})<0,"side and rear objects do not highlight");
   test(gazeScore({0,170,0},{0,-1,0},{10,0,0})>=0,"head pitch can select ground item");
@@ -388,6 +422,15 @@ int main() {
     input.x=0;stock.update(input,140);input.a=true;stock.update(input,160);
     test(stock.action==Menu::OpenGameInterface && !stock.visible,"open game interface requests native menu and hides VR menu");
     test(stock.update(input,180) && stock.action==-1,"held activation cannot also confirm an item in native interface");
+    {
+      Menu stats;Input in;in.focused=true;stats.update(in,100);stats.visible=true;
+      auto statRows=stats.rows();const auto at=std::find(statRows.begin(),statRows.end(),Menu::OpenCharacterStats);
+      test(at!=statRows.end(),"main VR menu lists character stats");
+      stats.selected=int(at-statRows.begin());
+      in.x=1;stats.update(in,120);test(stats.action==-1 && stats.visible,"horizontal navigation cannot open character stats accidentally");
+      in.x=0;stats.update(in,140);in.a=true;stats.update(in,160);
+      test(stats.action==Menu::OpenCharacterStats && !stats.visible,"character stats requests native status screen and hides VR menu");
+    }
     input.a=false;stock.update(input,200);stock.visible=true;stock.page=Menu::Page::Holsters;stock.selected=2;
     input.a=true;stock.update(input,220);
     test(stock.page==Menu::Page::HolsterSlot && stock.holsterPoint==2,"each holster summary opens that point's item management");

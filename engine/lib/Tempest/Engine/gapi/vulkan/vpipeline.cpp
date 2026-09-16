@@ -1,6 +1,8 @@
 #if defined(TEMPEST_BUILD_VULKAN)
 
 #include "vpipeline.h"
+#include <Tempest/Log>
+#include <chrono>
 
 #include "vdevice.h"
 #include "vshader.h"
@@ -86,24 +88,94 @@ VPipeline::~VPipeline() {
   }
 
 VkPipeline VPipeline::instance(const VkPipelineRenderingCreateInfoKHR& info, VkRenderPass pass, VkPipelineLayout pLay, size_t stride, bool fdm) {
-  std::lock_guard<SpinLock> guard(syncInst);
+  const bool async = allowAsync && pass==VK_NULL_HANDLE && info.pNext==nullptr &&
+                     info.colorAttachmentCount<=MaxFramebufferAttachments && device.asyncPipelines();
+  {
+    std::lock_guard<SpinLock> guard(syncInst);
 
-  for(auto& i:instDr)
-    if(i.isCompatible(info,pLay,stride,fdm))
-      return i.val;
+    for(auto& i:instDr)
+      if(i.isCompatible(info,pLay,stride,fdm))
+        return i.val; // null while async compile is pending
+
+    if(!async) {
+      VkPipeline val = VK_NULL_HANDLE;
+      try {
+        const auto start = std::chrono::steady_clock::now();
+        val = initGraphicsPipeline(device,pLay,pass,&info,st,
+                                   decl.get(),declSize,stride,
+                                   tp,modules,fdm);
+        instDr.emplace_back(info,pLay,stride,val,fdm);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+        if(ms>=20)
+          Log::i("Vulkan pipeline compile ",int(ms)," ms variants=",int(instDr.size())," stride=",int(stride)," fdm=",int(fdm));
+        }
+      catch(...) {
+        if(val!=VK_NULL_HANDLE)
+          vkDestroyPipeline(device.device.impl,val,nullptr);
+        throw;
+        }
+      return instDr.back().val;
+      }
+
+    // placeholder prevents duplicate jobs
+    instDr.emplace_back(info,pLay,stride,VK_NULL_HANDLE,fdm);
+  }
+
+  auto job = std::make_shared<AsyncJob>();
+  job->info = info;
+  std::memcpy(job->colorFrm, info.pColorAttachmentFormats, info.colorAttachmentCount*sizeof(VkFormat));
+  job->info.pColorAttachmentFormats = job->colorFrm;
+  job->pLay   = pLay;
+  job->stride = stride;
+  job->fdm    = fdm;
+
+  auto state  = asyncState;
+  bool queued = device.enqueuePipelineJob([this,state,job]() {
+    {
+      std::lock_guard<std::mutex> g(state->sync);
+      if(state->cancelled)
+        return;
+      ++state->running;
+    }
+    compileAsync(*job);
+    {
+      std::lock_guard<std::mutex> g(state->sync);
+      --state->running;
+    }
+    state->idle.notify_all();
+    });
+  if(!queued)
+    compileAsync(*job);
+  return VK_NULL_HANDLE;
+  }
+
+void VPipeline::compileAsync(const AsyncJob& job) {
   VkPipeline val = VK_NULL_HANDLE;
   try {
-    val = initGraphicsPipeline(device,pLay,pass,&info,st,
-                               decl.get(),declSize,stride,
-                               tp,modules,fdm);
-    instDr.emplace_back(info,pLay,stride,val,fdm);
+    const auto start = std::chrono::steady_clock::now();
+    val = initGraphicsPipeline(device,job.pLay,VK_NULL_HANDLE,&job.info,st,
+                               decl.get(),declSize,job.stride,
+                               tp,modules,job.fdm);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+    if(ms>=20)
+      Log::i("Vulkan pipeline compile ",int(ms)," ms async stride=",int(job.stride)," fdm=",int(job.fdm));
+    }
+  catch(const std::exception& e) {
+    Log::e("Vulkan async pipeline compile failed: ",e.what()); // entry stays empty, draws stay skipped
     }
   catch(...) {
-    if(val!=VK_NULL_HANDLE)
-      vkDestroyPipeline(device.device.impl,val,nullptr);
-    throw;
+    Log::e("Vulkan async pipeline compile failed");
     }
-  return instDr.back().val;
+
+  std::lock_guard<SpinLock> guard(syncInst);
+  if(val==VK_NULL_HANDLE)
+    return;
+  for(auto& i:instDr)
+    if(i.val==VK_NULL_HANDLE && i.isCompatible(job.info,job.pLay,job.stride,job.fdm)) {
+      i.val = val;
+      return;
+      }
+  vkDestroyPipeline(device.device.impl,val,nullptr);
   }
 
 IVec3 VPipeline::workGroupSize() const {
@@ -123,10 +195,17 @@ const VShader* VPipeline::findShader(ShaderReflection::Stage sh) const {
   }
 
 void VPipeline::cleanup() {
+  {
+    // queued jobs see the flag and skip; wait only for compiles already running
+    std::unique_lock<std::mutex> g(asyncState->sync);
+    asyncState->cancelled = true;
+    asyncState->idle.wait(g,[this]{ return asyncState->running==0; });
+  }
   for(auto& i:instRp)
     vkDestroyPipeline(device.device.impl,i.val,nullptr);
   for(auto& i:instDr)
-    vkDestroyPipeline(device.device.impl,i.val,nullptr);
+    if(i.val!=VK_NULL_HANDLE)
+      vkDestroyPipeline(device.device.impl,i.val,nullptr);
   }
 
 VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
@@ -340,7 +419,8 @@ VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
     }
 
   VkPipeline graphicsPipeline = VK_NULL_HANDLE;
-  const auto err = vkCreateGraphicsPipelines(device.device.impl,VK_NULL_HANDLE,1,&pipelineInfo,nullptr,&graphicsPipeline);
+  const auto err = vkCreateGraphicsPipelines(device.device.impl,device.pipelineCache,1,&pipelineInfo,nullptr,&graphicsPipeline);
+  device.markPipelineCacheDirty();
   if(err!=VK_SUCCESS)
     throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
   return graphicsPipeline;
@@ -437,7 +517,8 @@ VCompPipeline::VCompPipeline(VDevice& device, const VShader& comp)
       createFlags2.pNext = info.pNext;
       info.pNext         = &createFlags2;
       }
-    const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &impl);
+    const auto err = vkCreateComputePipelines(dev, device.pipelineCache, 1, &info, nullptr, &impl);
+    device.markPipelineCacheDirty();
     if(err!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
 
@@ -495,7 +576,8 @@ VkPipeline VCompPipeline::instance(VkPipelineLayout pLay) {
     info.flags              = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
     info.basePipelineHandle = impl;
     info.basePipelineIndex  = -1;
-    const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &val);
+    const auto err = vkCreateComputePipelines(dev, device.pipelineCache, 1, &info, nullptr, &val);
+    device.markPipelineCacheDirty();
     if(err!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
 

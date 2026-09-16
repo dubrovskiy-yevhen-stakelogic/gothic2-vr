@@ -25,6 +25,9 @@ DamageCalculator::Val DamageCalculator::damageValue(Npc& src, Npc& other, const 
     ret = swordDamage(src,other);
     }
 
+  if(ret.hasHit && !ret.invincible && !isSpell && src.isPlayer())
+    ret.value = Vr::penalizedDamage(ret.value,b!=nullptr ? b->weaponQualifiedVr() : src.activeWeaponQualifiedVr());
+
 #if 0
   // debug
   ret.value = MinDamage;

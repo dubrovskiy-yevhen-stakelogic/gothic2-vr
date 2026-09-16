@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "files": [
     {
       "path": ".gitattributes",
@@ -44,7 +44,7 @@
     },
     {
       "path": "android/CMakeLists.txt",
-      "sha256": "ce264ac775c040d06e9f3fe20c5370c83d39d2d5760d35af4cb73811d0838b49",
+      "sha256": "6ad092c187cf34d481c9455d9df4be66b7cc9dcce54d7038d8d876c69c14ebf6",
       "bytes": 1851
     },
     {
@@ -89,8 +89,8 @@
     },
     {
       "path": "CONTROLS.md",
-      "sha256": "a581c214a83445168014809f4a5c55b922ff983e1a4ca2cdfadb2b66cf194348",
-      "bytes": 4100
+      "sha256": "59b8956b1ca6f960b7b685b30d8aa02207cc8b9bcb3edc52cac9c69c0fe9fd80",
+      "bytes": 4618
     },
     {
       "path": "engine/android/app/identity.xml.in",
@@ -484,8 +484,8 @@
     },
     {
       "path": "engine/common/game/damagecalculator.cpp",
-      "sha256": "5d13bbd8a8d4039e8b3b69b35eade4bd59be6fd383d1e1d9386d1287f1adce7d",
-      "bytes": 6908
+      "sha256": "a9dbc2f16040bc57b57261016084535f8f0c286c5507336d16b114ffe8e17f6e",
+      "bytes": 7094
     },
     {
       "path": "engine/common/game/damagecalculator.h",
@@ -619,8 +619,8 @@
     },
     {
       "path": "engine/common/game/inventory.cpp",
-      "sha256": "bcd92056934e32f95b4561f13347dd322ba5f94f78eee77d7bef7a7408fdb42a",
-      "bytes": 27555
+      "sha256": "d7a939f076aefc28b5d0839d091515b6a95ae9205bba33ad14785164b5976aff",
+      "bytes": 27684
     },
     {
       "path": "engine/common/game/inventory.h",
@@ -644,13 +644,13 @@
     },
     {
       "path": "engine/common/game/playercontrol.cpp",
-      "sha256": "8bc59dd127a355528fa86cc1177e24bd199b81d9e79277a297edacd11e6fed92",
-      "bytes": 49896
+      "sha256": "1069fc2eaa31a79b2925708ee1e9a0f2b7cabc043f180f7d7d02506fcfd480dd",
+      "bytes": 50385
     },
     {
       "path": "engine/common/game/playercontrol.h",
-      "sha256": "9cc44830580b8e4e4911e36e8fae6fcd6c318327196680e34c87407b2a6db43f",
-      "bytes": 9175
+      "sha256": "22a3819303991dcf4c93f137f562d9d158f4b7789d3e41f7c5c0db572493db6d",
+      "bytes": 9221
     },
     {
       "path": "engine/common/game/questlog.cpp",
@@ -1039,8 +1039,8 @@
     },
     {
       "path": "engine/common/graphics/renderer.cpp",
-      "sha256": "134cf153bcdd60990ee297512e9c3bdee9929708bcedbac3cdbb1ec04103bd78",
-      "bytes": 153969
+      "sha256": "734e7386d56ebf2bacf519b6df4c7d9dd562d76d1f55c073b542ed3f26c9d91a",
+      "bytes": 154122
     },
     {
       "path": "engine/common/graphics/renderer.h",
@@ -1069,8 +1069,8 @@
     },
     {
       "path": "engine/common/graphics/shaders.cpp",
-      "sha256": "cb228247a6a8ee791b14dbe9c580c270f4546779b54e39973e99afdd0b051938",
-      "bytes": 32844
+      "sha256": "3d3bbf3d97271131458a1b3fff2bb910d19bf16ba532f454dc5173e3c7b3e94e",
+      "bytes": 32952
     },
     {
       "path": "engine/common/graphics/shaders.h",
@@ -1199,8 +1199,8 @@
     },
     {
       "path": "engine/common/resources.cpp",
-      "sha256": "a6920695a8aa216f7a524d778394c1781f6ffe3febe49df8ca81f452dec71432",
-      "bytes": 34849
+      "sha256": "3372777fece0f488bd3b1a18501405a89d8bbb3364e361788c2ced0e7df54bb3",
+      "bytes": 35223
     },
     {
       "path": "engine/common/resources.h",
@@ -1544,8 +1544,8 @@
     },
     {
       "path": "engine/common/vr/questxr.cpp",
-      "sha256": "dab61a75f0c633bfb81a6dc94d91554e2f80da1a9464bc1c28012a7420d8246d",
-      "bytes": 60005
+      "sha256": "54725e62b39bbf107cb8751c170f52209a3c43553dc8bf54a8a73ee54c023d97",
+      "bytes": 59050
     },
     {
       "path": "engine/common/vr/questxr.h",
@@ -1574,17 +1574,17 @@
     },
     {
       "path": "engine/common/vr/vrcombatmath.h",
-      "sha256": "a69ed0508bccd8d24c32d5fa9ed19fe3068b3700aa7f52a4181faf07b63deb54",
-      "bytes": 4422
+      "sha256": "b0729676634d8b7bf34d58a50793e4873a6f496382fb647bbf636e10e7d446b4",
+      "bytes": 7350
     },
     {
       "path": "engine/common/vr/vrcontrols.h",
-      "sha256": "7bcd9efd7a1a949fe4f90265ff5cb46d5ace0d88c1dcedcf50ac853e02538d19",
-      "bytes": 39404
+      "sha256": "17fc257c227e769c56e2291a408936d6d845dffc34cd245e0d7e883d6e7571e3",
+      "bytes": 39568
     },
     {
       "path": "engine/common/vr/vrdefaults.h",
-      "sha256": "1d9828961158566e3c59443815a514315f785f8e100bff7983e42219ec0bee3b",
+      "sha256": "b71a08e3b620b709c3561d7a150817b34b1acbfaa9885d8db7e56e7a2e4d8889",
       "bytes": 3728
     },
     {
@@ -1594,13 +1594,13 @@
     },
     {
       "path": "engine/common/vr/vrgameplay.cpp",
-      "sha256": "9f5bc7fe562dc2dd8022123923502a37a29f990030600ed58b65e223f2acd94c",
-      "bytes": 67216
+      "sha256": "0c573e967b04b480ce71d2445950052b2ca3219ae7ccda5a26685941a27c86a8",
+      "bytes": 69023
     },
     {
       "path": "engine/common/vr/vrgameplay.h",
-      "sha256": "1b4a598ec7871791550a1760695d1d672a4374c0cc0e5a6e3e09205d5c307a3b",
-      "bytes": 4051
+      "sha256": "b7cf659b4191083ea4bdb74d10746d6425a708f0ed6f6cf9228cfc147662de12",
+      "bytes": 4271
     },
     {
       "path": "engine/common/vr/vrhandrenderer.cpp",
@@ -1619,8 +1619,8 @@
     },
     {
       "path": "engine/common/vr/vrinteractionmath.h",
-      "sha256": "bc06c9e73f3446ba7892f83a31f00e24294596175049bd75bb01a71b7fd45a6a",
-      "bytes": 14707
+      "sha256": "dc75ed1b350f7328daca28a5404b56bcbce576df61de7bccd3fa4dce2cfec6f0",
+      "bytes": 15251
     },
     {
       "path": "engine/common/vr/vrprofiler.h",
@@ -1654,8 +1654,8 @@
     },
     {
       "path": "engine/common/vr/vrwindow.cpp",
-      "sha256": "e31a94a585ad2f72893036f710e1f88ef85ee38e980f9ea0bc38fd9b6d231b83",
-      "bytes": 55719
+      "sha256": "10ba1935512f4f3cfbecff63fa4e51f6895a7f4e6718c846b69b938d655c695e",
+      "bytes": 57703
     },
     {
       "path": "engine/common/vr/xrmath.h",
@@ -1679,8 +1679,8 @@
     },
     {
       "path": "engine/common/world/bullet.h",
-      "sha256": "e9c6c356320e096ab4a958fc56278c9c504529ff4242939dd39cd2ca153ec316",
-      "bytes": 2368
+      "sha256": "9015573160079e66d65b2933a6a518df2d8864717d86d79affc1c61a80d8b772",
+      "bytes": 2545
     },
     {
       "path": "engine/common/world/collisionzone.cpp",
@@ -1764,13 +1764,13 @@
     },
     {
       "path": "engine/common/world/objects/npc.cpp",
-      "sha256": "9173d6c0ca1cc5ad6f77080ad26240d59914600ecb1f92e78647cc740d797fd1",
-      "bytes": 140483
+      "sha256": "d737eb25e8d1e2ada3c03c31a3b65d5f886337fa7fcf910ba96b092790bdf8c8",
+      "bytes": 140932
     },
     {
       "path": "engine/common/world/objects/npc.h",
-      "sha256": "d5611a17a2bc81c32ff8bcfe4dc0ac3d3f34653f33b09f7f6c8c7e415bd6204a",
-      "bytes": 25546
+      "sha256": "c76495082bdca25c6a0da2497dfdb6700a242b0f489a90b559e84f31e6bbd6f6",
+      "bytes": 26093
     },
     {
       "path": "engine/common/world/objects/pfxemitter.cpp",
@@ -2014,23 +2014,23 @@
     },
     {
       "path": "engine/common/world/world.cpp",
-      "sha256": "02efe0e8d1a199439f05d226f11bbb4a09d73dbb78beed9fab49838f9f2f20d9",
-      "bytes": 32966
+      "sha256": "56d4c5fdfc6b7bd618652d6b2d9c9122fa8b19b3eed2bd328d25be082d8326e8",
+      "bytes": 33824
     },
     {
       "path": "engine/common/world/world.h",
-      "sha256": "c3375e6f2f636d1885d04b69aa02b626d80651de3affd47e07e1e0a8cc2067b9",
-      "bytes": 11656
+      "sha256": "80411760bb5ba113fce7043c06101f4d177738b3c45640aaf778706e3acae6c1",
+      "bytes": 11716
     },
     {
       "path": "engine/common/world/worldobjects.cpp",
-      "sha256": "566c58cad70bfec91f7d1212a766ae3411b4343fe3ae75c42fa0610565254ad5",
-      "bytes": 31686
+      "sha256": "c99dc8bc89ad666800d3c1e9aba73c2c215e0c46d9166a679b67e52a3338b0cd",
+      "bytes": 33321
     },
     {
       "path": "engine/common/world/worldobjects.h",
-      "sha256": "6ee98f8f9741c93d7ba93e2e463e384db008100663e3d277ef75e4e1ff77f4ea",
-      "bytes": 8274
+      "sha256": "290b1f2d8091cfacc61d84f897abfaca14c836d4bf23f9d009ef697275610918",
+      "bytes": 8578
     },
     {
       "path": "engine/common/world/worldsound.cpp",
@@ -10484,13 +10484,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/abstractgraphicsapi.cpp",
-      "sha256": "d2b23e3d05dbeb33edd827926b73291d2afa6b79ebc0463446ca6d7df1f21a69",
-      "bytes": 4696
+      "sha256": "78558db746798229684a5c849abe63457c864443043315c5afd31b9db57a0419",
+      "bytes": 4831
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/abstractgraphicsapi.h",
-      "sha256": "7506106d30e340c01e43cd6b070334b0da4ca4ea9dd788ae4aa0e43e7cbaf85e",
-      "bytes": 26119
+      "sha256": "d12b60a8fece624024f6685add60e03ebeebeeea7ae45acef3e99f41ea02c515",
+      "bytes": 26273
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/descriptorallocator.h",
@@ -10944,13 +10944,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vcommandbuffer.cpp",
-      "sha256": "33c74bff40530367758c41b3f4589b4b5311e796d71ea060be56088200b07ec5",
-      "bytes": 53935
+      "sha256": "de23c5d7b1ae59116d25ebd0717da8df9b62dd5f88d41c8e5456f72d462de0fb",
+      "bytes": 54365
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vcommandbuffer.h",
-      "sha256": "a942323c0c8abe4de18682ded7cb234ab5babefbca9954e0dd11173129c1d93a",
-      "bytes": 9156
+      "sha256": "ac00d7c68a0020136f8f37f23b3e336903dfbaa9a117f05333cb9435c3b6c59a",
+      "bytes": 9275
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vcommandpool.cpp",
@@ -10984,13 +10984,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vdevice.cpp",
-      "sha256": "a0a8b73afc590f02c3b4850f83701e70738c40428b8500c7ed9ce2d8a06637d5",
-      "bytes": 52650
+      "sha256": "17a97b55222cbe4a07d8a7f8da6f738540bb07f5fd965f53bac9603589d8e87d",
+      "bytes": 58299
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vdevice.h",
-      "sha256": "4827cc9406fee2faec1c66a418cafb7a4cecf329432b4d596551b989be8a94c4",
-      "bytes": 18442
+      "sha256": "da8144d178215b513c3fd822f4c338c800eebdc17c414f77f34fa881ae602185",
+      "bytes": 19911
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vfence.cpp",
@@ -11014,13 +11014,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vpipeline.cpp",
-      "sha256": "fdf1bde721c84b8f6b5386b7b5505e2dc5dd795bc5b69c4ed0519a03ecd59e03",
-      "bytes": 21430
+      "sha256": "13b6fb131e8ab0074e01b845646cd913fccc663a9ce5ee5d43bba0df85bb65e3",
+      "bytes": 24544
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vpipeline.h",
-      "sha256": "8628e0e1ec58b809c6cd1f6cfdad78d56a02956243a4637951268b78e622b3ac",
-      "bytes": 5619
+      "sha256": "839d0ae30f4731b21a9340a0b5df61f17af4e326d3ea69a1a28c3b07bb9883c2",
+      "bytes": 6561
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vpoolcache.cpp",
@@ -11189,8 +11189,8 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/graphics/device.h",
-      "sha256": "f6060a0a11cab989bd2bebba14fc543494f4f20393355db1185b701155627a6d",
-      "bytes": 11090
+      "sha256": "a700aa309f9f4496f29cce0deca38af6e2fa6197eb8e612c311d7726d3d720b6",
+      "bytes": 11560
     },
     {
       "path": "engine/lib/Tempest/Engine/graphics/encoder.cpp",
@@ -19964,13 +19964,13 @@
     },
     {
       "path": "INSTALL.md",
-      "sha256": "1be8ab8c790ba3b36db7aa6300659de6da13ab96c040d39e2fb9d7ef6996aae9",
+      "sha256": "7e37d5b1582766ea3d23a842a26a971c706aeca5b8b7b40a515c9a0e7e4af319",
       "bytes": 4134
     },
     {
       "path": "KNOWN_ISSUES.md",
-      "sha256": "12688f70037444d4886da84b42fa368842702b5c4a0a37ebee9fb6e98437df63",
-      "bytes": 2016
+      "sha256": "972d0900d48f6ea4125404028bdc225130224dbf90c3134ac9b5498106259506",
+      "bytes": 2274
     },
     {
       "path": "LICENSE",
@@ -19999,13 +19999,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "059f3c413641c123f7c71732baed2c7ad21236fcd29d34be52793f643a1c91c1",
-      "bytes": 3686
+      "sha256": "69f7ac442225ac637f6fb0e0e1457524c17820a3044e935109d6768b6ad58c96",
+      "bytes": 4691
     },
     {
       "path": "RELEASE_REVIEW.md",
-      "sha256": "644677c8e5c0d7697a4e49742778d805bfd6fef1d56d9f435efc6e6b6154e902",
-      "bytes": 2475
+      "sha256": "d05d8594f25f4cd6b94020cfd95370ba190dd3ed8b7b357a56756c1b30a98d5a",
+      "bytes": 1732
     },
     {
       "path": "SETUP-DEPENDENCIES.bat",
@@ -20029,8 +20029,8 @@
     },
     {
       "path": "tests/focus.py",
-      "sha256": "060f95196cf88bc1198cbddfabb76a9bf5444a99af99cfccd61e417d18d66624",
-      "bytes": 3356
+      "sha256": "34c8a2665509184ea09958f32ab6160a05e189a489dab1a4ff16f45d69c88605",
+      "bytes": 4474
     },
     {
       "path": "tests/gameplay-regressions.py",
@@ -20039,8 +20039,8 @@
     },
     {
       "path": "tests/grip-regressions.py",
-      "sha256": "d4e828dda7190c6fe90235d6db56e297ad920974e0b6d75ec0459c804385b707",
-      "bytes": 9776
+      "sha256": "7f31b0c883e43560b7a56e6b069630cc3670888b7b1cc50b2e4e2ac47ad31f62",
+      "bytes": 10682
     },
     {
       "path": "tests/hud-regressions.py",
@@ -20059,8 +20059,8 @@
     },
     {
       "path": "tests/native-actions.py",
-      "sha256": "734bdfcb33abd935dae370794a8039d336304af3e36de328018e0c26be75106c",
-      "bytes": 7262
+      "sha256": "36ee4cb7134716e1608bc9339f85d95c190107513a83c2e8aaaeab6c05e5d7dc",
+      "bytes": 7382
     },
     {
       "path": "tests/npc-attachments.py",
@@ -20074,8 +20074,8 @@
     },
     {
       "path": "tests/release-defaults.cpp",
-      "sha256": "79601c968ce6121775b7cfa1e76b4e474ba6132614fe5489b62f8c9b314f18db",
-      "bytes": 1085
+      "sha256": "03fffc1d22d627f168ae522fdc86123ac6ac17cc4cf70abf8aff9aae76518749",
+      "bytes": 1084
     },
     {
       "path": "tests/sky.py",
@@ -20084,13 +20084,13 @@
     },
     {
       "path": "tests/vrcontrols.cpp",
-      "sha256": "743bb3166f6bcc15de24de7f2b3b73fed9ce048a88be38543c2c2104373dc973",
+      "sha256": "79924d8437f0a861c0f61e78450cfda001fc1d56e78b942d4d131f5ccb584e1e",
       "bytes": 36566
     },
     {
       "path": "tests/vrinteraction.cpp",
-      "sha256": "68f14794f30e49ae5e7f388e247d4d7734ed46f10732f2ffd84d61cc7830d3f6",
-      "bytes": 48763
+      "sha256": "66f67fffa10033178d4dd7fa57546923257e7bac1f73e707b1f1d5f244008a36",
+      "bytes": 52630
     },
     {
       "path": "tests/xrmath.cpp",
@@ -20194,7 +20194,7 @@
     },
     {
       "path": "tools/verify-android.py",
-      "sha256": "c1ea0d7426de7623c11b0505e14dd62484b47ca90013fb533c5c01ebdb7a988e",
+      "sha256": "b1f9120771715b22dad1f0a3953ee90d28c2ead7cc83f7b1512afd246a8a9892",
       "bytes": 8307
     },
     {

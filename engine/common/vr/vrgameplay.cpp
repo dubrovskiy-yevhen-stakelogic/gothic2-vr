@@ -33,11 +33,19 @@ bool clearPath(World& world,Vec3 from,Vec3 to,float margin=3.f) {
   return !hit.hasCol || (hit.v-to).length()<margin;
 }
 }
+static std::string requirementWarning(int32_t atr,int32_t need,int32_t have) {
+  const char* name=atr==ATR_STRENGTH?"Strength":atr==ATR_DEXTERITY?"Dexterity":atr==ATR_MANAMAX?"Max mana":atr==ATR_HITPOINTSMAX?"Max health":"Attribute";
+  char text[160];
+  std::snprintf(text,sizeof(text),"%s %d required (you have %d) - damage -%d%%",name,int(need),int(have),int(std::lround((1.f-unqualifiedWeaponDamage)*100.f)));
+  return text;
+}
 Npc* Gameplay::healthTarget(World& world,const Focus& focus,uint64_t now) {
   if(hudTargetWorld!=&world){hudTargetWorld=&world;hudTargetNpc=nullptr;}
   Focus previous;previous.npc=hudTargetNpc;
   hudTargetNpc=world.validateFocus(previous).npc;
   auto focused=world.validateFocus(focus).npc;
+  // interaction focus wins: the HUD shows the NPC that B talks to
+  if(focused && focused!=world.player() && !focused->isDead()){hudTargetNpc=focused;return focused;}
   Npc* selected=nullptr;float best=2.f;
   auto consider=[&](Npc& npc,bool retained) {
     if(&npc==world.player() || npc.isDead())return;
@@ -74,6 +82,7 @@ void Gameplay::suspend() {
   for(auto& t:triggers) t.update(0,false);
   for(auto& h:held) { h.swing.reset();h.strikeUntil=0; }
   for(auto& m:releaseMotion)m.reset();
+  for(auto& r:releaseDebounce)r.reset();
   bowGesture.reset();drawing=false;nockHand=-1;drawLength=0;supportHand=swordMain=-1;
 }
 bool Gameplay::compatible(const Item& item,int slot) {
@@ -205,6 +214,20 @@ std::vector<const Gameplay::Entry*> Gameplay::filtered(bool npc) const {
   std::vector<const Entry*> result;const int category=npc?enemyCategory:itemCategory;
   for(const auto& entry:npc?enemies:items) if(category==0 || entry.category==category) result.push_back(&entry);
   return result;
+}
+// Auto-assign picked-up melee to slot 0 and ranged to slot 2 when free.
+bool Gameplay::autoHolsterPickup(Npc& player,HolsterSettings& settings,size_t id,uint64_t now) {
+  auto item=player.getItem(id);
+  if(!item || item->count()==0)return false;
+  const int point=holsterPointForPickup(compatible(*item,0),compatible(*item,2));
+  if(point<0)return false;
+  auto symbol=player.world().script().findSymbol(id);
+  if(!symbol)return false;
+  std::string name(symbol->name());
+  if(!holsterFreeForPickup(settings,point,name,resolve(player,point,settings)!=nullptr))return false;
+  assignHolsterItem(settings,point,name);
+  message(std::string(slots[point])+": "+std::string(item->displayName()),now);
+  return true;
 }
 bool Gameplay::seedRangedDefaults(HolsterSettings& settings) const {
   bool changed=false;
@@ -456,7 +479,10 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
   std::array<Matrix,2> weaponPoses={Matrix::mkIdentity(),Matrix::mkIdentity()};
   const auto& settings=menu.settings.interaction;
   returnItems(*world,*player,now);
+  for(const auto id:player->consumePickupsVr())
+    changed=autoHolsterPickup(*player,menu.settings.interaction,id,now) || changed;
   player->setPhysicalCombatVr(settings.physicalCombat);
+  player->setWeaponRequirementsVr(true,settings.ignoreWeaponRequirements);
   const auto parried=player->consumeParryVr();
   for(unsigned i=0;i<2;++i)if(parried&(1u<<i)){xr.haptic(i,.8f,.08f);message("Parried",now);Tempest::Log::i("VR melee parry hand=",i);}
   allowed=allowed && xr.focused() && !player->isDown() && !player->isSwim() && !player->isDive() && player->interactive()==nullptr;
@@ -465,6 +491,8 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
     raining=world->view()->sky().vrWeather()==3 && !world->physic()->ray(body.head,body.head+Vec3(0,3000,0)).hasCol;
     roofCheck=now+300;roofPosition=body.head;
   }
+  if(releaseFrame!=0 && now>releaseFrame+ReleaseDebounce::gapMs)releaseBlockedUntil=now+ReleaseDebounce::blockMs;
+  releaseFrame=now;
   if(!allowed) {suspend();if(!preview)return changed;}
   const auto pad=xr.gamepad();
   // Both grips belong to the VR-menu chord. It must never draw or strike too.
@@ -480,10 +508,11 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
   }
   for(int i=0;i<2;++i) {
     auto& holding=held[size_t(i)];const auto& h=hands[size_t(i)];
-    if(holding.id==None || holding.autoArrow || (holding.slot==3 && held[size_t(1-i)].slot==2))continue;
+    if(holding.id==None || holding.autoArrow || (holding.slot==3 && held[size_t(1-i)].slot==2)){releaseDebounce[size_t(i)].reset();continue;}
     const int slot=body.closest(origin(h.grip),settings,units);
     const auto release=releaseAction(allowed && !chord,xr.gripTracked(uint32_t(i)),h.squeeze,settings.gripLock,slot>=0 && (slot==holding.holster || resolve(*player,slot,settings)==nullptr));
-    if(release==ReleaseAction::Keep)continue;
+    if(!releaseDebounce[size_t(i)].confirm(release!=ReleaseAction::Keep,now,releaseBlockedUntil,releaseMotion[size_t(i)].velocity))continue;
+    const auto releaseVelocity=releaseDebounce[size_t(i)].velocity;releaseDebounce[size_t(i)].reset();
     const bool stow=release==ReleaseAction::Stow;
     auto item=player->getItem(holding.id);if(!item){holding=Held{};continue;}
     if(!stow && swordMain==i && supportHand>=0 && xr.gripTracked(uint32_t(supportHand)) && xr.gripValue(uint32_t(supportHand))>.65f) {
@@ -500,7 +529,7 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
       const auto pose=itemPose(origin(h.grip),axis(h.aim,2),-axis(h.grip,1),calibration,units);
       auto model=pose;
       if(auto mesh=Resources::loadMesh(item->handle().visual))model=weaponModelMatrix(mesh->bbox()[0],mesh->bbox()[1],item->isCrossbow()?4:holding.slot,pose,calibration.grip,calibration.scale,i==0);
-      auto velocity=releaseMotion[size_t(i)].velocity;
+      auto velocity=releaseVelocity;
       const float speed=velocity.length();if(speed>6.f)velocity*=6.f/speed;
       velocity=xr.trackingVector(uint32_t(i),h.grip,velocity);
       auto dropped=clearPath(*world,body.head,origin(pose))?player->dropItemVr(holding.id,model,velocity):nullptr;
@@ -540,7 +569,15 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
     auto item=player->getItem(holding.id);
     if(holding.id!=None && (!item || item->count()==0)) {holding=Held{};item=nullptr;}
     if(item && (holding.slot==0 || holding.slot==2) && (!player->activeWeapon() || player->activeWeapon()->clsId()!=holding.id)) {
+      Tempest::Log::i("VR held weapon cleared by engine hand=",i," item=",item->displayName()," weaponState=",int(player->weaponState()));
       holding=Held{};item=nullptr;drawing=false;nockHand=-1;
+    }
+    if(item && (holding.slot==0 || holding.slot==2) && !settings.ignoreWeaponRequirements && now>=requirementNoticeAfter) {
+      int32_t atr=0,need=0;
+      if(!item->checkCondUse(*player,atr,need)) {
+        message(requirementWarning(atr,need,player->attribute(Attribute(atr))),now);
+        requirementNoticeAfter=now+6000;
+      }
     }
     Vec3 position=origin(h.grip),forward=normalized(axis(h.aim,2));
     auto up=normalized(-axis(h.grip,1),{0,1,0});
@@ -591,12 +628,14 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
       });
       if(nearest) {
         const auto id=nearest->clsId();const int kind=itemKind(*nearest);
+        const bool thrown=std::any_of(returning.begin(),returning.end(),[&](const ReturnItem& r){return r.item==nearest;});
         if(player->takeItemVr(*nearest)) {
           caught=true;
-          if(player->equipVr(id,settings.ignoreWeaponRequirements)){holding=Held{};holding.id=id;holding.slot=kind;holding.holster=-1;
+          if(!thrown)changed=autoHolsterPickup(*player,menu.settings.interaction,id,now) || changed;
+          if(player->equipVr(id,true)){holding=Held{};holding.id=id;holding.slot=kind;holding.holster=-1;
             for(int point=0;point<4;++point)if(auto assigned=resolve(*player,point,settings);assigned && assigned->clsId()==id){holding.holster=point;break;}
             item=player->getItem(id);caught=true;xr.haptic(uint32_t(i),.5f);}
-          else message("Picked up - see Cheats / Player for requirements",now);
+          else message("Cannot draw this weapon",now);
         }
       }
     }
@@ -607,7 +646,7 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
         auto selected=resolve(*player,slot,settings);
         if(!selected) message("Holster empty - assign an inventory item",now);
         else if((itemKind(*selected)==0 || itemKind(*selected)==2) && (held[size_t(1-i)].slot==0 || held[size_t(1-i)].slot==2)) message("Stow the other weapon first",now);
-        else if((itemKind(*selected)==0 || itemKind(*selected)==2) && !player->equipVr(selected->clsId(),settings.ignoreWeaponRequirements)) message("Weapon requirements not met - see Cheats / Player",now);
+        else if((itemKind(*selected)==0 || itemKind(*selected)==2) && !player->equipVr(selected->clsId(),true)) message("Cannot draw this weapon",now);
         else { holding.id=selected->clsId();holding.slot=itemKind(*selected);holding.holster=slot;item=player->getItem(holding.id);xr.haptic(uint32_t(i),.4f); }
       } else {
         Item* nearest=nullptr;float distance=settings.pickupRadius*units;
@@ -616,7 +655,14 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
           const float d=(candidate.midPosition()-position).length();
           if(d<distance && clearPath(*world,body.head,position) && clearPath(*world,position,candidate.midPosition(),8.f)) {nearest=&candidate;distance=d;}
         });
-        if(nearest) {const auto name=std::string(nearest->displayName());if(player->takeItemVr(*nearest)) {message("Picked up: "+name,now);xr.haptic(uint32_t(i),.35f);}}
+        if(nearest) {
+          const auto name=std::string(nearest->displayName());const auto id=nearest->clsId();
+          if(player->takeItemVr(*nearest)) {
+            if(!autoHolsterPickup(*player,menu.settings.interaction,id,now))message("Picked up: "+name,now);
+            else changed=true;
+            xr.haptic(uint32_t(i),.35f);
+          }
+        }
       }
     }
     if(item && priorId!=holding.id) {
@@ -945,6 +991,7 @@ std::string Gameplay::label(Menu::Row row,const Menu& menu) const {
     case Menu::HolsterDrop:return "Drop one item into world";
     case Menu::IgnoreWeaponRequirements:return std::string("Ignore weapon requirements: ")+toggle(s.ignoreWeaponRequirements);
     case Menu::OpenGameInterface:return "Open game interface";
+    case Menu::OpenCharacterStats:return "Character stats (level, attributes)";
     case Menu::HolsterX:case Menu::HolsterY:case Menu::HolsterZ: {
       float v=row==Menu::HolsterX?s.offsets[size_t(p)].x:row==Menu::HolsterY?s.offsets[size_t(p)].y:s.offsets[size_t(p)].z;
       std::snprintf(b,sizeof(b),"%s: < %+.1f cm >",row==Menu::HolsterX?"Right / left":row==Menu::HolsterY?"Height below head":"Forward / back",double(v*100));return b;

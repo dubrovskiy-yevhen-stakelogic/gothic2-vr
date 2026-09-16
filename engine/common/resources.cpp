@@ -9,6 +9,7 @@
 #include <Tempest/SoundEffect>
 #include <Tempest/TextCodec>
 #include <Tempest/Log>
+#include <chrono>
 #include <Tempest/Color>
 
 #include <zenkit/MultiResolutionMesh.hh>
@@ -932,7 +933,13 @@ Tempest::Sound Resources::loadSoundBuffer(std::string_view name) {
 
 Dx8::PatternList Resources::loadDxMusic(std::string_view name) {
   std::lock_guard<std::recursive_mutex> g(inst->sync);
-  return inst->implLoadDxMusic(name);
+  const auto start = std::chrono::steady_clock::now();
+  auto ret = inst->implLoadDxMusic(name);
+  // log slow loads: the render thread waits on 'sync'
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+  if(ms>=50)
+    Log::i("Music theme load ",int(ms)," ms under resource lock: ",std::string(name));
+  return ret;
   }
 
 DmSegment* Resources::loadMusicSegment(char const* name) {

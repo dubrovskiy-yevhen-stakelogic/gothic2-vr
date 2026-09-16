@@ -11,6 +11,47 @@ inline float gazeScore(Vec3 head,Vec3 forward,Vec3 point) {
   const float width=std::min(35.f,9.f+along*.14f),side=(delta-forward*along).length();
   return side>width?-1.f:side/width+along*.0005f;
 }
+// Interaction gaze tangent to a point; negative when the point is behind the head.
+inline float gazeTangent(Vec3 head,Vec3 forward,Vec3 point) {
+  if(!finite(head)||!finite(forward)||!finite(point))return -1;
+  forward=normalized(forward);const auto delta=point-head;const float along=dot(delta,forward);
+  if(along<=0)return -1;
+  return (delta-forward*along).length()/std::max(along,50.f);
+}
+// NPC interaction cone: fifteen degrees to acquire, twenty-two to retain, with a 15 cm near-field margin.
+inline float npcConeScore(Vec3 head,Vec3 forward,Vec3 point,bool retained) {
+  if(!finite(head)||!finite(forward)||!finite(point))return -1;
+  forward=normalized(forward);const auto delta=point-head;const float along=dot(delta,forward);
+  if(along<=0)return -1;
+  const float side=(delta-forward*along).length();
+  if(side>15.f+along*(retained?.404026f:.267949f))return -1;
+  return side/std::max(along,50.f)+along*.0005f;
+}
+// Scores the point of the NPC body axis (shins to head) closest to the gaze ray.
+// points: that point, then head/chest probes inside the cone for line-of-sight tests.
+inline float npcGazeScore(Vec3 head,Vec3 forward,Vec3 feet,Vec3 top,bool retained,Vec3* points=nullptr,size_t* count=nullptr) {
+  if(count)*count=0;
+  if(!finite(head)||!finite(forward)||!finite(feet)||!finite(top))return -1;
+  forward=normalized(forward);
+  const auto axis=top-feet;const float length2=dot(axis,axis);
+  float t=.7f;
+  if(length2>1.f) {
+    const auto w0=head-feet;const float b=dot(forward,axis),d=dot(forward,w0),e=dot(axis,w0),denominator=length2-b*b;
+    if(denominator>1e-3f*length2)t=(e-b*d)/denominator;
+  }
+  t=std::clamp(t,.15f,1.f);
+  const auto nearest=feet+axis*t;
+  const float score=npcConeScore(head,forward,nearest,retained);
+  if(score<0)return -1;
+  if(points && count) {
+    points[(*count)++]=nearest;
+    for(float height:{.9f,.55f})if(std::abs(height-t)>.05f) {
+      const auto probe=feet+axis*height;
+      if(npcConeScore(head,forward,probe,retained)>=0)points[(*count)++]=probe;
+    }
+  }
+  return score;
+}
 // HUD-only angular selection: twenty degrees to acquire, twenty-eight to retain.
 inline float healthGazeScore(Vec3 head,Vec3 forward,Vec3 point,float units,bool retained) {
   if(!finite(head) || !finite(forward) || !finite(point) || !std::isfinite(units) || units<=0)return -1;
@@ -21,12 +62,28 @@ inline float healthGazeScore(Vec3 head,Vec3 forward,Vec3 point,float units,bool 
   if(side>.10f*units+along*(retained?.531709f:.363970f))return -1;
   return side/std::max(along,.1f*units)+.015f*distance/(20.f*units);
 }
+// Damage multiplier for weapons whose requirements are not met.
+constexpr float unqualifiedWeaponDamage=.25f;
+inline int32_t penalizedDamage(int32_t value,bool qualified) {
+  return qualified || value<=0 ? value : int32_t(float(value)*unqualifiedWeaponDamage);
+}
 enum class ReleaseAction { Keep,Stow,Drop };
 inline ReleaseAction releaseAction(bool allowed,bool tracked,float grip,bool lock,bool atHolster) {
   if(!allowed || !tracked || !std::isfinite(grip) || grip>.25f)return ReleaseAction::Keep;
   if(atHolster)return ReleaseAction::Stow;
   return lock?ReleaseAction::Keep:ReleaseAction::Drop;
 }
+// Grip release must stay open confirmMs; releases are blocked after a frame gap. Velocity is taken on the first open frame.
+struct ReleaseDebounce {
+  static constexpr uint64_t confirmMs=40,gapMs=200,blockMs=300;
+  bool pending=false;uint64_t since=0;Vec3 velocity{};
+  void reset(){pending=false;velocity={};}
+  bool confirm(bool open,uint64_t now,uint64_t blockedUntil,Vec3 currentVelocity) {
+    if(!open || now<blockedUntil){reset();return false;}
+    if(!pending){pending=true;since=now;velocity=currentVelocity;}
+    return now-since>=confirmMs;
+  }
+};
 // Finite segment against the actual oriented NPC bounds, including an origin
 // already inside. The legacy projectile ray deliberately keeps its own policy.
 inline bool meleeContact(Vec3 from,Vec3 to,Vec3 center,Vec3 radius,float yaw,float& fraction) {

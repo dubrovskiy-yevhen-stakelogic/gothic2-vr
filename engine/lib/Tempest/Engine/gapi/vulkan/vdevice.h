@@ -5,6 +5,12 @@
 #include <Tempest/AccelerationStructure>
 #include <stdexcept>
 #include <string>
+#include <atomic>
+#include <deque>
+#include <functional>
+#include <vector>
+#include <condition_variable>
+#include <thread>
 
 #include "vulkan_sdk.h"
 
@@ -433,6 +439,31 @@ class VDevice : public AbstractGraphicsApi::Device {
     VSamplerCache           samplers;
 
     VkProps                 props = {};
+
+    // Persistent pipeline cache, saved from a background thread
+    VkPipelineCache         pipelineCache = VK_NULL_HANDLE;
+    void                    markPipelineCacheDirty() { pipelineCacheDirty.store(true); }
+    void                    initPipelineCache();
+    void                    shutdownPipelineCache();
+    void                    savePipelineCache();
+    std::string             pipelineCachePath;
+    std::atomic<bool>       pipelineCacheDirty{false};
+    std::mutex              pipelineCacheSync;
+    std::condition_variable pipelineCacheWake;
+    bool                    pipelineCacheStop = false;
+    std::thread             pipelineCacheThread;
+
+    // Async graphics pipeline compilation (see Device::AsyncPipelineScope)
+    bool                    asyncPipelines() const { return pipelineWorkersRunning.load(); }
+    bool                    enqueuePipelineJob(std::function<void()> job);
+    std::atomic<bool>       pipelineWorkersRunning{false};
+    void                    startPipelineWorkers();
+    void                    stopPipelineWorkers();
+    std::mutex              pipelineJobSync;
+    std::condition_variable pipelineJobWake;
+    std::deque<std::function<void()>> pipelineJobs;
+    bool                    pipelineJobsStop = false;
+    std::vector<std::thread> pipelineWorkers;
 
     PFN_vkGetBufferMemoryRequirements2KHR vkGetBufferMemoryRequirements2 = nullptr;
     PFN_vkGetImageMemoryRequirements2KHR  vkGetImageMemoryRequirements2  = nullptr;

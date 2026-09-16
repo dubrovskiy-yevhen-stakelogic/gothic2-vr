@@ -1,4 +1,4 @@
-# Gothic II VR 0.1.0 Alpha
+# Gothic II VR 0.1.1 Alpha
 
 [Install](INSTALL.md) · [Controls](CONTROLS.md) · [Build from source](BUILDING.md) · [Limitations](KNOWN_ISSUES.md)
 
@@ -14,13 +14,23 @@ Gothic II: Night of the Raven on standalone **Meta Quest 3**, with tracked hands
 - Bow draw and release: the bow hand aims; pulling the other hand back sets shot power. The arrow and support hand attach to the bow when the second grip engages. Crossbows have separate alignment profiles.
 - Weapon, support-hand, aiming and holster calibration. Bow and crossbow family defaults reduce repeated setup. Bow string height follows model dimensions, with manual position and height controls. The original string is removed from supported bow meshes at runtime.
 - Optional red bow sight, nearby pickup highlighting and an enemy health HUD.
-- An in-headset holster menu showing each slot's contents, with assignment, swapping and dropping controls. Original inventory access through **Open game interface** in a theater panel.
+- An in-headset holster menu showing each slot's contents, with assignment, swapping and dropping controls. Original inventory and character stats through **Open game interface** and **Character stats** in a theater panel.
 - Haptics, adjustable running speed, snap/smooth/physical turning, button mapping and saved settings.
 - Adjustable HUD, resolution, draw distance, lighting, terrain detail and an optional profiler.
 
+## Changes in 0.1.1
+
+- Multi-second stalls when new scenery first comes into view are reduced: world material shaders are prepared on background threads and cached between sessions. A newly seen object can appear a few frames late instead.
+- Talking to NPCs no longer requires aiming at their waist. Look at any part of the body; the name on the HUD is the character that **B** talks to.
+- Taking damage no longer removes a weapon whose requirements are not met. Such weapons deal a quarter of their damage and show a warning, unless **Ignore weapon requirements** is enabled.
+- A brief grip dip or a stall no longer drops or stows the held item.
+- **Character stats** in the VR menu opens level, experience, learning points, attributes and talents.
+- Picked-up melee weapons are assigned to the right belt and bows to the back-left holster when those holsters are free.
+- The original **Cloud shadows** option no longer enables screen-space ambient occlusion in VR.
+
 ## Install
 
-Download the **Gothic-II-VR-0.1.0-Alpha-Quest.zip** player package, extract it, and run **INSTALL.bat**. It downloads its own tools, installs the APK and prepares your purchased Gothic II Gold / Night of the Raven data. See [INSTALL.md](INSTALL.md). No separate Python, Java, Android SDK or SideQuest installation is needed by players.
+Download the **Gothic-II-VR-0.1.1-Alpha-Quest.zip** player package, extract it, and run **INSTALL.bat**. It downloads its own tools, installs the APK and prepares your purchased Gothic II Gold / Night of the Raven data. See [INSTALL.md](INSTALL.md). No separate Python, Java, Android SDK or SideQuest installation is needed by players.
 
 This source kit contains no APK, purchased game data, saves, toolchains or signing keys. To build your own APK, run **BUILD-APK.bat**; dependencies download automatically. Then use **INSTALL.bat** from this folder.
 
@@ -32,6 +42,6 @@ Built on **[OpenGothic by Try and its contributors](https://github.com/Try/OpenG
 
 Gothic II and its game materials belong to their respective rights holders. This is an unofficial community project. See [NOTICE.md](NOTICE.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE](LICENSE).
 
-The matching source archive is **Gothic-II-VR-0.1.0-Alpha-Source.zip**. Distribute it alongside the player package. Sources, build scripts and third-party notices are included; required external dependencies have pinned download URLs and checksums.
+The matching source archive is **Gothic-II-VR-0.1.1-Alpha-Source.zip**. Distribute it alongside the player package. Sources, build scripts and third-party notices are included; required external dependencies have pinned download URLs and checksums.
 
 [Discord discussion and bug reports](https://discord.com/channels/747967102895390741/1543691482861408276)

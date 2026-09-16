@@ -179,7 +179,12 @@ void Renderer::setupSettings() {
       break;
     }
   settings.zEnvMappingEnabled = Gothic::settingsGetI("ENGINE","zEnvMappingEnabled")!=0;
+#if defined(GOTHIC2VR_OPENXR)
+  // SSAO (zCloudShadowScale) exceeds the Quest stereo GPU budget
+  settings.zCloudShadowScale  = false;
+#else
   settings.zCloudShadowScale  = Gothic::settingsGetI("ENGINE","zCloudShadowScale") !=0;
+#endif
   settings.ssaoHalfResolution = Gothic::settingsGetI("ENGINE","ssaoHalfResolution")!=0;
   settings.fogHalfResolution  = Gothic::settingsGetI("ENGINE","fogHalfResolution")==1;
   const float fadeDistance = Gothic::settingsGetF("ENGINE","cameraObstructionFadeDistance");

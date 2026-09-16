@@ -1,4 +1,4 @@
-# Install Gothic II VR 0.1.0 Alpha
+# Install Gothic II VR 0.1.1 Alpha
 
 ## You need
 
@@ -9,7 +9,7 @@
 
 ## First installation
 
-1. Extract **Gothic-II-VR-0.1.0-Alpha-Quest.zip** to a writable folder, such as `C:\Games\Gothic2VR`. Do not run scripts inside the ZIP.
+1. Extract **Gothic-II-VR-0.1.1-Alpha-Quest.zip** to a writable folder, such as `C:\Games\Gothic2VR`. Do not run scripts inside the ZIP.
 2. Connect the Quest with USB debugging allowed and run **INSTALL.bat**.
 3. Enter the path to your purchased game's installation folder when asked. Choose the folder containing `Data`, `_work` and `System`, not a save folder.
 4. The script automatically downloads checksum-verified ADB and portable Python when needed. It packages your local game files, verifies the APK, installs it and transfers the private data archive. Saves are excluded from packaging.

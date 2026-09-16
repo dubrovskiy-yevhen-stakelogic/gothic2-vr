@@ -37,6 +37,15 @@ class Device {
   public:
     using Props=AbstractGraphicsApi::Props;
 
+    // Pipelines created inside this scope may compile asynchronously (see AbstractGraphicsApi).
+    struct AsyncPipelineScope {
+      AsyncPipelineScope():previous(AbstractGraphicsApi::asyncPipelineCreation()) { AbstractGraphicsApi::asyncPipelineCreation()=true; }
+      ~AsyncPipelineScope() { AbstractGraphicsApi::asyncPipelineCreation()=previous; }
+      AsyncPipelineScope(const AsyncPipelineScope&)=delete;
+      private:
+        bool previous;
+      };
+
     Device(AbstractGraphicsApi& api);
     Device(AbstractGraphicsApi& api, std::string_view name);
     Device(AbstractGraphicsApi& api, DeviceType type);

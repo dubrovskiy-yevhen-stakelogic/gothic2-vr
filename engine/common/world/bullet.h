@@ -53,6 +53,8 @@ class Bullet final : public DynamicWorld::BulletCallback {
     void     setCritChance(float v) { critCh=v; }
     float    hitChance() const { return hitCh; }
     void     setHitChance(float v) { hitCh=v; }
+    bool     weaponQualifiedVr() const { return qualifiedVr; }
+    void     setWeaponQualifiedVr(bool v) { qualifiedVr=v; }
 
     bool     isFinished() const;
     float    pathLength() const;
@@ -74,6 +76,7 @@ class Bullet final : public DynamicWorld::BulletCallback {
     float                     hitCh      = 1.f;
     float                     critCh     = 0.f;
     float                     visualScale = 1.f;
+    bool                      qualifiedVr = true;
 
     MeshObjects::Mesh         view;
     Effect                    vfx;

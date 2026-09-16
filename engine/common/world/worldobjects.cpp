@@ -767,6 +767,17 @@ Interactive* WorldObjects::findInteractive(const Npc &pl, Interactive* def, cons
 
 Npc* WorldObjects::findNpcNear(const Npc& pl, Npc* def, const SearchOpt& opt) {
   def = validateNpc(def);
+  if(def && opt.gaze) {
+    // keep the previous NPC unless another one is clearly closer to the gaze center
+    auto  xopt  = opt;
+    xopt.flags  = SearchFlg(xopt.flags | SearchFlg::NoAngle);
+    float kept  = opt.rangeMax*opt.rangeMax;
+    float found = opt.rangeMax*opt.rangeMax;
+    auto  r     = findObj(npcNear,pl,opt);
+    if(testObj(*def,pl,xopt,kept) && (r==nullptr || r==def || !testObj(*r,pl,opt,found) || found>=kept*.7f))
+      return def;
+    def = nullptr;
+    }
   if(def) {
     auto xopt  = opt;
     xopt.flags = SearchFlg(xopt.flags | SearchFlg::NoAngle | SearchFlg::NoRay);
@@ -1071,7 +1082,6 @@ static bool canSee(const Npc& pl, const Item& n){
   return pl.canSeeItem(n,true);
   }
 
-static Vec3 gazePoint(const Npc& npc,Vec3,Vec3){return npc.position()+Vec3(0,70,0);}
 static Vec3 gazePoint(const Interactive& mob,Vec3,Vec3){return mob.displayPosition();}
 static Vec3 gazePoint(const Item& item,Vec3 head,Vec3 direction){
   const auto center=item.midPosition();const auto along=std::max(0.f,Vr::dot(center-head,direction));
@@ -1079,6 +1089,27 @@ static Vec3 gazePoint(const Item& item,Vec3 head,Vec3 direction){
   auto local=head+direction*along;auto inverse=item.transform();inverse.inverse();inverse.project(local);
   local.x=std::clamp(local.x,bounds[0].x,bounds[1].x);local.y=std::clamp(local.y,bounds[0].y,bounds[1].y);local.z=std::clamp(local.z,bounds[0].z,bounds[1].z);
   item.transform().project(local);return local;
+}
+
+static float gazeScore(const Npc& npc,Vec3 head,Vec3 direction,bool retained,Vec3* points,size_t& count){
+  return Vr::npcGazeScore(head,direction,npc.position(),npc.displayPosition(),retained,points,&count);
+}
+template<class T>
+static float gazeScore(const T& obj,Vec3 head,Vec3 direction,bool,Vec3* points,size_t& count){
+  points[0]=gazePoint(obj,head,direction);count=1;
+  return Vr::gazeScore(head,direction,points[0]);
+}
+
+float WorldObjects::gazeTangent(const Npc& npc,Vec3 head,Vec3 direction){
+  Vec3 points[3];size_t count=0;
+  if(gazeScore(npc,head,Vr::normalized(direction),true,points,count)<0)return -1;
+  return Vr::gazeTangent(head,direction,points[0]);
+}
+float WorldObjects::gazeTangent(const Item& item,Vec3 head,Vec3 direction){
+  return Vr::gazeTangent(head,direction,gazePoint(item,head,Vr::normalized(direction)));
+}
+float WorldObjects::gazeTangent(const Interactive& mob,Vec3 head,Vec3 direction){
+  return Vr::gazeTangent(head,direction,gazePoint(mob,head,Vr::normalized(direction)));
 }
 
 template<class T>
@@ -1129,11 +1160,16 @@ bool WorldObjects::testObj(T &src, const Npc &pl, const WorldObjects::SearchOpt 
 
   if(opt.gaze) {
     const auto direction=Vr::normalized(opt.gazeDirection);
-    const auto point=gazePoint(npc,opt.gazeHead,direction);
-    const float score=Vr::gazeScore(opt.gazeHead,direction,point);
+    // cached NPC (NoAngle): retention cone, walls still apply
+    Vec3 points[3];size_t count=0;
+    const float score=gazeScore(npc,opt.gazeHead,direction,bool(opt.flags&SearchFlg::NoAngle),points,count);
     if(score<0 || score>=rlen)return false;
-    const auto obstruction=owner.physic()->ray(opt.gazeHead,point);
-    if(obstruction.hasCol && (obstruction.v-point).length()>3.f)return false;
+    bool visible=false;
+    for(size_t i=0;i<count && !visible;++i) {
+      const auto obstruction=owner.physic()->ray(opt.gazeHead,points[i]);
+      visible=!obstruction.hasCol || (obstruction.v-points[i]).length()<=3.f;
+      }
+    if(!visible)return false;
     rlen=score;return true;
   }
   auto pos   = npc.position();

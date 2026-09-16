@@ -174,6 +174,7 @@ class VCommandBuffer:public AbstractGraphicsApi::CommandBuffer {
     VkBuffer                                curVbo          = VK_NULL_HANDLE;
     size_t                                  vboStride       = 0;
     VkPipelineLayout                        pipelineLayout  = VK_NULL_HANDLE;
+    bool                                    pipelinePending = false; // graphics pipeline still compiling: skip draws
 
     bool                                    isDbgRegion = false;
 

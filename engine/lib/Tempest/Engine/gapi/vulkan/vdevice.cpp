@@ -10,6 +10,11 @@
 
 #include <Tempest/Application>
 #include <Tempest/Log>
+#include <Tempest/SystemApi>
+#include <chrono>
+#include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <cstring>
 #include <array>
 
@@ -97,10 +102,14 @@ VDevice::VDevice(VkInstance instance, const bool hasDeviceFeatures2, uint32_t in
     descAlloc.setDevice(*this);
   samplers.setDevice(*this);
   data.reset(new DataMgr(*this));
+  initPipelineCache();
+  startPipelineWorkers();
   }
 
 VDevice::~VDevice() {
   vkDeviceWaitIdle(device.impl);
+  stopPipelineWorkers();
+  shutdownPipelineCache();
   data.reset();
 
   for(auto& i:timeline.timepoint) {
@@ -108,6 +117,160 @@ VDevice::~VDevice() {
       continue;
     vkDestroyFence(device.impl, i->fence, nullptr);
     }
+  }
+
+static bool pipelineCacheHeaderMatches(const std::vector<char>& blob, const VkPhysicalDeviceProperties& prop) {
+  // VkPipelineCacheHeaderVersionOne: length, version, vendorID, deviceID, pipelineCacheUUID.
+  if(blob.size()<16+VK_UUID_SIZE)
+    return false;
+  uint32_t header[4] = {};
+  std::memcpy(header,blob.data(),sizeof(header));
+  return header[0]>=16+VK_UUID_SIZE && header[1]==VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+         header[2]==prop.vendorID && header[3]==prop.deviceID &&
+         std::memcmp(blob.data()+16,prop.pipelineCacheUUID,VK_UUID_SIZE)==0;
+  }
+
+void VDevice::initPipelineCache() {
+  VkPhysicalDeviceProperties prop = {};
+  vkGetPhysicalDeviceProperties(physicalDevice,&prop);
+
+  const auto dir = SystemApi::appDataPath();
+  if(!dir.empty())
+    pipelineCachePath = dir + "/vk-pipeline-cache.bin";
+
+  std::vector<char> blob;
+  if(!pipelineCachePath.empty()) {
+    std::ifstream in(pipelineCachePath,std::ios::binary);
+    if(in)
+      blob.assign(std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>());
+    if(!blob.empty() && !pipelineCacheHeaderMatches(blob,prop)) {
+      Log::i("Vulkan pipeline cache: discarded incompatible file bytes=",int(blob.size()));
+      blob.clear();
+      }
+    }
+
+  VkPipelineCacheCreateInfo info = {};
+  info.sType           = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+  info.initialDataSize = blob.size();
+  info.pInitialData    = blob.empty() ? nullptr : blob.data();
+  if(vkCreatePipelineCache(device.impl,&info,nullptr,&pipelineCache)!=VK_SUCCESS) {
+    // A rejected blob must not disable caching for the session.
+    info.initialDataSize = 0;
+    info.pInitialData    = nullptr;
+    if(vkCreatePipelineCache(device.impl,&info,nullptr,&pipelineCache)!=VK_SUCCESS)
+      pipelineCache = VK_NULL_HANDLE;
+    }
+  Log::i("Vulkan pipeline cache: loaded bytes=",int(blob.size())," active=",int(pipelineCache!=VK_NULL_HANDLE));
+
+  if(pipelineCache==VK_NULL_HANDLE || pipelineCachePath.empty())
+    return;
+  pipelineCacheThread = std::thread([this]() {
+    std::unique_lock<std::mutex> guard(pipelineCacheSync);
+    while(!pipelineCacheStop) {
+      // periodic save: Android may kill the process without destructors
+      pipelineCacheWake.wait_for(guard,std::chrono::seconds(4));
+      if(pipelineCacheStop)
+        break;
+      if(!pipelineCacheDirty.exchange(false))
+        continue;
+      guard.unlock();
+      savePipelineCache();
+      guard.lock();
+      }
+    });
+  }
+
+void VDevice::startPipelineWorkers() {
+  const unsigned hw = std::thread::hardware_concurrency();
+  const size_t   n  = hw>=6 ? 3 : (hw>=4 ? 2 : 1);
+  for(size_t i=0; i<n; ++i) {
+    pipelineWorkers.emplace_back([this]() {
+      std::unique_lock<std::mutex> guard(pipelineJobSync);
+      while(true) {
+        pipelineJobWake.wait(guard,[this]{ return pipelineJobsStop || !pipelineJobs.empty(); });
+        if(pipelineJobsStop)
+          return;
+        auto job = std::move(pipelineJobs.front());
+        pipelineJobs.pop_front();
+        guard.unlock();
+        job();
+        guard.lock();
+        }
+      });
+    }
+  pipelineWorkersRunning.store(true);
+  Log::i("Vulkan async pipelines: workers=",int(n));
+  }
+
+void VDevice::stopPipelineWorkers() {
+  {
+  std::lock_guard<std::mutex> guard(pipelineJobSync);
+  pipelineJobsStop = true;
+  pipelineWorkersRunning.store(false);
+  pipelineJobs.clear();
+  }
+  pipelineJobWake.notify_all();
+  for(auto& t:pipelineWorkers)
+    t.join();
+  pipelineWorkers.clear();
+  }
+
+bool VDevice::enqueuePipelineJob(std::function<void()> job) {
+  {
+  std::lock_guard<std::mutex> guard(pipelineJobSync);
+  if(pipelineJobsStop)
+    return false;
+  pipelineJobs.push_back(std::move(job));
+  }
+  pipelineJobWake.notify_one();
+  return true;
+  }
+
+void VDevice::shutdownPipelineCache() {
+  if(pipelineCacheThread.joinable()) {
+    {
+    std::lock_guard<std::mutex> guard(pipelineCacheSync);
+    pipelineCacheStop = true;
+    }
+    pipelineCacheWake.notify_all();
+    pipelineCacheThread.join();
+    }
+  if(pipelineCache==VK_NULL_HANDLE)
+    return;
+  if(pipelineCacheDirty.exchange(false))
+    savePipelineCache();
+  vkDestroyPipelineCache(device.impl,pipelineCache,nullptr);
+  pipelineCache = VK_NULL_HANDLE;
+  }
+
+void VDevice::savePipelineCache() {
+  if(pipelineCache==VK_NULL_HANDLE || pipelineCachePath.empty())
+    return;
+  const auto start = std::chrono::steady_clock::now();
+  size_t size = 0;
+  if(vkGetPipelineCacheData(device.impl,pipelineCache,&size,nullptr)!=VK_SUCCESS || size==0)
+    return;
+  std::vector<char> blob(size);
+  const auto err = vkGetPipelineCacheData(device.impl,pipelineCache,&size,blob.data());
+  if(err!=VK_SUCCESS && err!=VK_INCOMPLETE)
+    return;
+  blob.resize(size);
+
+  const auto tmp = pipelineCachePath + ".tmp";
+  {
+  std::ofstream out(tmp,std::ios::binary|std::ios::trunc);
+  out.write(blob.data(),std::streamsize(blob.size()));
+  if(!out.good()) {
+    Log::e("Vulkan pipeline cache: write failed");
+    return;
+    }
+  }
+  if(std::rename(tmp.c_str(),pipelineCachePath.c_str())!=0) {
+    Log::e("Vulkan pipeline cache: rename failed");
+    return;
+    }
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+  Log::i("Vulkan pipeline cache: saved bytes=",int(blob.size())," ms=",int(ms));
   }
 
 void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {

@@ -691,6 +691,8 @@ const RenderPipeline* Shaders::materialPipeline(const Material& mat, DrawCommand
   b.indexed      = indexed;
 
   auto& device = Resources::device();
+  // scene materials may compile asynchronously
+  const Tempest::Device::AsyncPipelineScope asyncCompile;
   if(mat.isTesselated() && device.properties().tesselationShader && t==DrawCommands::Landscape && true) {
     auto shVs = GothicShader::get(string_frm("main_", vsTok, typeVs, bindless, ".vert.sprv"));
     auto shTc = GothicShader::get(string_frm("main_", vsTok, typeVs, bindless, ".tesc.sprv"));

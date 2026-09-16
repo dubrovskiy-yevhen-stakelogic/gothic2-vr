@@ -39,6 +39,7 @@ struct Bullet {Vec3 position,direction;Npc* origin=nullptr;float chance=0;int da
   void setPosition(Vec3 p){position=p;}void setDirection(Vec3 p){direction=p;}void setOrigin(Npc* n){origin=n;}
   float visualScale=1;void setVisualScale(float s){visualScale=s;}
   void setDamage(int d){damage=d;}void setHitChance(float f){chance=f;}
+  bool qualified=true;void setWeaponQualifiedVr(bool q){qualified=q;}
 };
 struct Script {bool consume=false;void invokeItem(Npc*,uint32_t);};
 struct World {Bullet bullet;Script vm;int shots=0;
@@ -49,7 +50,7 @@ struct DamageCalculator {static int rangeDamageValue(Npc&){return 7;}};
 struct Visual {WeaponState state=WeaponState::None;bool setToFightMode(WeaponState s){bool changed=state!=s;state=s;return changed;}};
 class Npc {public:Inventory invent;World owner;int health=10;Visual visual;int skeletonUpdates=0;
   struct Handle{int weapon=0;} data;Handle* hnpc=&data;
-  void updateWeaponSkeleton(){++skeletonUpdates;}void readyFistsVr();bool isDown(){return false;}
+  void updateWeaponSkeleton(){++skeletonUpdates;}void readyFistsVr();bool isDown(){return false;}bool activeWeaponQualifiedVr()const{return true;}
   bool shootVr(const Vec3&,const Vec3&,float power=1.f,float visualScale=1.f);bool drinkVr(size_t);bool equipVr(size_t,bool ignoreRequirements=false);
 };
 void Script::invokeItem(Npc* npc,uint32_t) {npc->health+=25;if(consume)npc->invent.delItem(npc->invent.current,1,*npc);}

@@ -26,7 +26,8 @@ struct Item {size_t id;bool crossbow=false;int quantity=10;size_t count()const{r
  struct Data{int munition=2;std::string visual="mesh";};Data handle()const{return {};}};
 struct Npc {Item bow{1},arrow{2};int shots=0;float power=0;Vec3 direction;
  Item* getItem(size_t id){return id==1?&bow:id==2 && arrow.quantity>0?&arrow:nullptr;}
- bool shootVr(Vec3,Vec3 d,float p,float){++shots;--arrow.quantity;power=p;direction=d;return true;}};
+ bool shootVr(Vec3,Vec3 d,float p,float){++shots;--arrow.quantity;power=p;direction=d;return true;}
+ bool isDown()const{return false;}};
 struct DynamicWorld{static constexpr float bulletSpeed=1;struct Hit{bool hasCol=false;void* npcHit=nullptr;Vec3 v;};Hit rayNpc(Vec3,Vec3,Npc*){return {};}};
 struct World{DynamicWorld physics;DynamicWorld* physic(){return &physics;}};
 bool clearPath(World&,Vec3,Vec3){return true;}
@@ -59,12 +60,14 @@ struct Fixture {
 start=source.index('  int bow=-1,arrow=-1;');end=source.index('  if(allowed && settings.pickupHighlight)',start)
 fixture+=source[start:end]+'\n}\nvoid sword(){\n'+block('if(!calibrationPreview && supportHand>=0 && swordMain>=0)')+'\n}\n};\n'
 fixture+=r'''
-struct Gothic {static Gothic& inst(){static Gothic g;return g;}Npc hero;bool hasPlayer=true;Npc* player(){return hasPlayer?&hero:nullptr;}};
+struct Gothic {static Gothic& inst(){static Gothic g;return g;}Npc hero;bool hasPlayer=true;Npc* player(){return hasPlayer?&hero:nullptr;}
+ enum class LoadState{Idle,Loading};LoadState checkLoading()const{return LoadState::Idle;}};
+struct KeyCodec {enum Action{Status=1};};
 struct InventoryUiFixture {
  struct {int action=Menu::OpenGameInterface;} vrMenu;
  struct {int calls=0;void suspend(){++calls;}} vrGameplay;
  struct {bool active=false;bool isActive(){return active;}} dialogs;
- struct {bool active=true;void closeAll(){active=false;}} rootMenu;
+ struct {bool active=true;std::string menu;int key=0;Npc* player=nullptr;void closeAll(){active=false;}void setMenu(const char* name,int k){menu=name;key=k;active=true;}void setPlayer(Npc& p){player=&p;}} rootMenu;
  struct {int opens=0;bool active=false,wheel=false;bool isActive(){return active;}bool isWheelOpen(){return wheel;}void close(){active=wheel=false;}void open(Npc&){++opens;active=true;}} inventory;
  int cleared=0;void clearInput(){++cleared;}
  void open(){
@@ -82,6 +85,9 @@ int main(){
  ui.inventory.wheel=true;ui.open();test(ui.inventory.active && !ui.inventory.wheel && ui.inventory.opens==2,"dedicated inventory action replaces the quick wheel with the full item list");
  ui.inventory.active=false;ui.dialogs.active=true;ui.open();test(!ui.inventory.active,"inventory action cannot overlap a dialogue");
  ui.dialogs.active=false;Gothic::inst().hasPlayer=false;ui.open();test(!ui.inventory.active,"title screen without player cannot open inventory");Gothic::inst().hasPlayer=true;
+ InventoryUiFixture stats;stats.vrMenu.action=Menu::OpenCharacterStats;stats.rootMenu.active=false;stats.inventory.active=true;stats.open();
+ test(stats.rootMenu.active && stats.rootMenu.menu=="MENU_STATUS" && stats.rootMenu.key==KeyCodec::Status && stats.rootMenu.player==&Gothic::inst().hero && !stats.inventory.active && stats.vrGameplay.calls==1 && stats.cleared==1,"character stats action opens the native status screen for the player");
+ stats.rootMenu.active=false;stats.dialogs.active=true;stats.open();test(!stats.rootMenu.active,"character stats cannot overlap a dialogue");
  Fixture f;const Vec3 rest(3,0,-18);
  f.tick({40,20,10});test(f.visuals.size()==1 && !f.hands[0].anchored && !f.drawing,"arrow starts in the freely tracked hand");
  const auto free=f.visuals[0].position;f.tick({50,20,10});test((f.visuals[0].position-free-Vec3(10,0,0)).length()<.001f,"before nocking arrow follows physical hand translation");

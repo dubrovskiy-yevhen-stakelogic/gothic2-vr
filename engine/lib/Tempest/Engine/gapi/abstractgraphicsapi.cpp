@@ -4,6 +4,11 @@
 
 using namespace Tempest;
 
+bool& AbstractGraphicsApi::asyncPipelineCreation() {
+  static thread_local bool value = false;
+  return value;
+  }
+
 static Sampler mkTrillinear() {
   Sampler s;
   s.anisotropic = false;

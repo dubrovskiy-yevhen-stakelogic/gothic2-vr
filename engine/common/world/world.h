@@ -123,6 +123,7 @@ class World final {
     Focus                findFocus(const Npc& pl, const Focus &def, bool unarmed = false);
     Focus                findFocus(const Focus& def);
     bool                 testFocusNpc(Npc *def);
+    bool                 isVrGaze() const {return vrGaze;}
     void                 setVrGaze(bool enabled,Tempest::Vec3 head={},Tempest::Vec3 direction={0,0,1}) {vrGaze=enabled;vrGazeHead=head;vrGazeDirection=direction;}
     void                 setMeleeFocusRangeScale(float scale) { meleeFocusRangeScale=scale; }
 

@@ -3451,6 +3451,8 @@ Item* Npc::takeItem(Item& item) {
   it = addItem(std::move(ptr));
   if(isPlayer() && it!=nullptr)
     owner.sendPassivePerc(*this,*this,*it,PERC_ASSESSTHEFT);
+  if(isPlayer() && it!=nullptr && vrKeepUnqualifiedWeapons && vrPickups.size()<32)
+    vrPickups.push_back(it->clsId());
 
   implAniWait(uint64_t(sq->totalTime()));
   return it;
@@ -3481,6 +3483,13 @@ void Npc::readyFistsVr() {
   hnpc->weapon=1;
   }
 
+bool Npc::activeWeaponQualifiedVr() const {
+  if(!vrKeepUnqualifiedWeapons || vrIgnoreWeaponRequirements)
+    return true;
+  auto w = invent.activeWeapon();
+  return w==nullptr || w->checkCond(*this);
+  }
+
 bool Npc::equipVr(size_t id,bool ignoreRequirements) {
   auto it=invent.getItem(id);
   if(!it || (!ignoreRequirements && !it->checkCond(*this)))return false;
@@ -3507,6 +3516,7 @@ bool Npc::shootVr(const Tempest::Vec3& pos,const Tempest::Vec3& direction,float 
   bullet.setPosition(pos); bullet.setDirection(direction*(DynamicWorld::bulletSpeed*Vr::bowSpeedScale(power)/length)); bullet.setOrigin(this);
   bullet.setVisualScale(visualScale);
   bullet.setDamage(DamageCalculator::rangeDamageValue(*this));
+  bullet.setWeaponQualifiedVr(activeWeaponQualifiedVr());
   bullet.setHitChance(1.f); // The tracked projectile, rather than an aim dice roll, determines contact.
   invent.delItem(id,1,*this);
   return true;
@@ -4202,6 +4212,7 @@ bool Npc::shootBow(Interactive* focOverride) {
   invent.delItem(size_t(munition),1,*this);
   b.setOrigin(this);
   b.setDamage(DamageCalculator::rangeDamageValue(*this));
+  b.setWeaponQualifiedVr(activeWeaponQualifiedVr());
 
   auto rgn = currentRangedWeapon();
   if(Gothic::inst().version().game==1) {

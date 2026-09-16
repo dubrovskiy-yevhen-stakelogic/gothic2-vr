@@ -11,7 +11,7 @@ Default controls for Quest Touch. Gameplay buttons can be changed in **VR settin
 | Run | Hold the left stick button (L3) while moving |
 | Turn | Right stick; 30В° snap by default |
 | Jump | A |
-| Interact | B; look at the target |
+| Interact | B; look at the target, whose name appears on the HUD |
 | Inventory | X |
 | Journal | Y |
 | Crouch action | Right stick button (R3) |
@@ -34,7 +34,7 @@ The **grip** is the side button under your middle finger; the **trigger** is the
 | Back left | Empty |
 | Back right | Arrows (`ITRW_ARROW`), if owned |
 
-Holsters select a suitable inventory item. The **Holsters** menu shows all four slots and lets you assign, move, swap or drop an item, move the holster to the controller position and adjust its grab radius. Optional **Grip lock** keeps an item held without continuously pressing the grip; release the grip at its matching holster to stow it. **Weapon calibration** adjusts the model, aiming direction, support hand and holstered pose.
+Holsters select a suitable inventory item. A picked-up melee weapon is assigned to the right belt and a bow or crossbow to the back left, unless that holster already holds an owned item or the weapon is assigned elsewhere. The **Holsters** menu shows all four slots and lets you assign, move, swap or drop an item, move the holster to the controller position and adjust its grab radius. Optional **Grip lock** keeps an item held without continuously pressing the grip; release the grip at its matching holster to stow it. **Weapon calibration** adjusts the model, aiming direction, support hand and holstered pose.
 
 ## Physical actions
 
@@ -46,6 +46,10 @@ Holsters select a suitable inventory item. The **Holsters** menu shows all four 
 ## Comfort and image settings
 
 **Locomotion** controls running speed (0.75–2.0×), turning mode and speed, movement orientation, world size and room-scale movement. **Recenter tracking** recalibrates your position. Physical crouching lowers the camera but does not shrink the player's collision capsule.
+
+**Character stats** in the main VR menu opens the original status screen with level, experience, learning points, attributes and talents.
+
+Weapons whose strength or dexterity requirement is not met deal a quarter of their damage and show a warning. **Ignore weapon requirements** removes this penalty.
 
 **HUD** controls interface placement, distance, **World item highlight**, highlight range and **Bow sight**. **Open game interface** opens the original inventory in a theater panel. **Performance** controls render resolution, draw distance, detail, lighting and the profiler. **Foveation** defaults to Off. On numeric calibration rows, the right trigger increases the value and the left trigger decreases it. Settings save automatically in `VR.ini`.
 

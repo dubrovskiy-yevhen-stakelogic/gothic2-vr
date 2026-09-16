@@ -351,6 +351,11 @@ class Npc final {
     void      readyFistsVr();
     Item*     dropItemVr(size_t id,const Tempest::Matrix4x4& model,const Tempest::Vec3& velocity);
     void      setPhysicalCombatVr(bool enabled) {vrPhysicalMelee=enabled;vrGuard={};}
+    // VR: keep unqualified weapons equipped; damage penalty unless ignored
+    void      setWeaponRequirementsVr(bool keepEquipped,bool ignore) {vrKeepUnqualifiedWeapons=keepEquipped;vrIgnoreWeaponRequirements=ignore;}
+    bool      keepsUnqualifiedWeaponsVr() const {return vrKeepUnqualifiedWeapons;}
+    bool      activeWeaponQualifiedVr() const;
+    std::vector<size_t> consumePickupsVr() {return std::exchange(vrPickups,{});}
     void      setGuardVr(const Vr::Guard& guard) {vrGuard=guard;}
     unsigned  consumeParryVr() {auto value=vrParryFeedback;vrParryFeedback=0;return value;}
     bool      drinkVr(size_t item);
@@ -433,6 +438,8 @@ class Npc final {
 
   private:
     bool vrPhysicalMelee=false;
+    std::vector<size_t> vrPickups;
+    bool vrKeepUnqualifiedWeapons=false,vrIgnoreWeaponRequirements=false;
     Vr::Guard vrGuard;
     unsigned vrParryFeedback=0;
     struct Routine final {

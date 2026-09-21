@@ -117,23 +117,3 @@ Four `[ENGINE]` keys matter on this target. `vrBlankFrame` and `vrMirrorOff` are
 | `vrMaxEyeHeight` | off | Extra height cap for runtimes that recommend an unusually tall eye image. Aspect is preserved, so the width shrinks with it. |
 
 There is no installer and no player package for this target. Building it is the only way to get it, and it is not part of the released Quest ZIP.
-
-## Host tests and source integrity
-
-`tools/test-vr-source.py` compiles 15 C++20 host suites from the shipped code, including melee contact, grips, calibration, target HUD, celestial rendering and release defaults. These need a host C++20 compiler; with MSVC, run from an x64 Developer Command Prompt:
-
-```powershell
-.\toolchain\python-3.12.10\python.exe -B tools/test-vr-source.py --output build/host-tests
-```
-
-`tools/run-host-tests.ps1` is the same run as one command for a CI job or an ordinary shell. It resolves the portable Python and, when no compiler is on PATH, enters the x64 MSVC environment itself, so no Developer Command Prompt is needed first. It exits non-zero on the first failure. `-IncludeInstallers` adds the installer scenarios, `-Cxx` selects a compiler, and `-Output` moves the logs:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-host-tests.ps1
-```
-
-`powershell -NoProfile -ExecutionPolicy Bypass -File tests/installers.ps1` runs eight deployment scenarios against a simulated ADB boundary, without touching a headset.
-
-This optional contributor test compiler is not required by players or for the Android build. Tests do not launch the game or establish headset performance.
-
-**AUDIT-SOURCE-KIT.bat** checks the recorded source hashes, excluding local build/toolchain/log directories. For an extracted publication archive, use `tools/audit-source-kit.py` without `--allow-local-state`: archive validation rejects build outputs, game payloads and signing material. Maintainers must regenerate `SOURCE-MANIFEST.json` and `SOURCE-SHA256.txt` after reviewed source or documentation changes.

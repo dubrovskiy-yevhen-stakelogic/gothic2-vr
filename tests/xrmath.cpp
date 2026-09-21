@@ -38,6 +38,28 @@ int main() {
   near(point(p,{0,-std::tan(b)*10,10}).y,1,"lower frustum edge Vulkan Y");
   near(point(p,{0,0,2}).z,0,"near maps to zero");
   near(point(p,{0,0,100000}).z,1,"far maps to one");
+  // Off-axis desktop HMDs: Index/Vive/WMR report tanAngleLeft != -tanAngleRight
+  // and canted panels skew the vertical too, so the boresight of an eye is not
+  // the centre of its image. A symmetric construction would silently place it
+  // there and shear the stereo pair; pin the principal point of both eyes.
+  const auto principal=[&](float al,float ar,float ad,float au) {
+    const auto m=projection(al,ar,ad,au,2,100000); auto v=point(m,{0,0,10});
+    return Vec3(v.x,v.y,0);
+    };
+  const auto centre=[](float lo,float hi) { return -(std::tan(hi)+std::tan(lo))/(std::tan(hi)-std::tan(lo)); };
+  const auto nasal=principal(-0.9599f,0.7854f,-0.8727f,0.7854f); // ~ -55/45/-50/45 degrees
+  near(nasal.x,centre(-0.9599f,0.7854f),"left eye boresight is off centre horizontally");
+  near(nasal.y,-centre(-0.8727f,0.7854f),"canted boresight is off centre vertically and Y is flipped");
+  const auto temporal=principal(-0.7854f,0.9599f,-0.8727f,0.7854f);
+  near(temporal.x,-nasal.x,"mirrored eye mirrors the boresight, so the pair does not shear");
+  const auto q=projection(-0.9599f,0.7854f,-0.8727f,0.7854f,2,100000);
+  near(point(q,{std::tan(-0.9599f)*10,0,10}).x,-1,"asymmetric left edge");
+  near(point(q,{std::tan(0.7854f)*10,0,10}).x,1,"asymmetric right edge");
+  near(point(q,{0,-std::tan(0.7854f)*10,10}).y,-1,"asymmetric upper edge");
+  near(point(q,{0,-std::tan(-0.8727f)*10,10}).y,1,"asymmetric lower edge");
+  const auto symmetric=principal(-0.8f,0.8f,-0.8f,0.8f);
+  near(symmetric.x,0,"a symmetric frustum still centres its boresight X");
+  near(symmetric.y,0,"a symmetric frustum still centres its boresight Y");
   SnapTurn snap;
   near(snap.update(1,true),0,"held on entry is blocked");
   near(snap.update(0,true),0,"neutral arms turn");

@@ -1,8 +1,7 @@
 #include "questxr.h"
 #include "vr/vrhudrect.h"
 #if defined(GOTHIC2VR_OPENXR)
-#include "system/api/androidapi.h"
-#include <android_native_app_glue.h>
+#include "vrplatform.h"
 #include <Tempest/Log>
 #include <Tempest/VulkanApi>
 #include <algorithm>
@@ -11,7 +10,6 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
-#include <unistd.h>
 #include "vrprofiler.h"
 #include "utils/inifile.h"
 
@@ -21,6 +19,20 @@ void checkVk(VkResult r,const char* op) {
   if(r!=VK_SUCCESS) throw std::runtime_error(std::string(op)+": Vulkan "+std::to_string(r));
 }
 constexpr XrSpaceLocationFlags validPose=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+// xrResultToString needs a live instance, so name the results that can arrive
+// before xrCreateInstance returns. An if-chain rather than a switch, so that
+// duplicate enumerator values in the OpenXR headers cannot break the build.
+const char* resultName(XrResult r) {
+  if(r==XR_ERROR_RUNTIME_UNAVAILABLE)     return "XR_ERROR_RUNTIME_UNAVAILABLE";
+  if(r==XR_ERROR_INITIALIZATION_FAILED)   return "XR_ERROR_INITIALIZATION_FAILED";
+  if(r==XR_ERROR_EXTENSION_NOT_PRESENT)   return "XR_ERROR_EXTENSION_NOT_PRESENT";
+  if(r==XR_ERROR_API_VERSION_UNSUPPORTED) return "XR_ERROR_API_VERSION_UNSUPPORTED";
+  if(r==XR_ERROR_VALIDATION_FAILURE)      return "XR_ERROR_VALIDATION_FAILURE";
+  if(r==XR_ERROR_RUNTIME_FAILURE)         return "XR_ERROR_RUNTIME_FAILURE";
+  if(r==XR_ERROR_OUT_OF_MEMORY)           return "XR_ERROR_OUT_OF_MEMORY";
+  if(r==XR_ERROR_LIMIT_REACHED)           return "XR_ERROR_LIMIT_REACHED";
+  return "unnamed OpenXR result";
+  }
 }
 
 QuestXr& QuestXr::inst() { return *active; }
@@ -28,19 +40,13 @@ void QuestXr::check(XrResult r,const char* op) const {
   if(XR_SUCCEEDED(r)) return;
   char name[XR_MAX_RESULT_STRING_SIZE]={};
   if(instance!=XR_NULL_HANDLE) xrResultToString(instance,r,name);
-  throw std::runtime_error(std::string(op)+": OpenXR "+std::to_string(r)+" "+name);
+  throw std::runtime_error(std::string(op)+": OpenXR "+std::to_string(r)+" "+(name[0]==0?resultName(r):name));
 }
 
 QuestXr::QuestXr() {
   try {
-    auto app=Tempest::AndroidApi::nativeApp();
-    if(app==nullptr || app->activity==nullptr) throw std::runtime_error("OpenXR: Android activity missing");
-    PFN_xrInitializeLoaderKHR init=nullptr;
-    check(xrGetInstanceProcAddr(XR_NULL_HANDLE,"xrInitializeLoaderKHR",reinterpret_cast<PFN_xrVoidFunction*>(&init)),"loader entry");
-    XrLoaderInitInfoAndroidKHR loader{XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR};
-    loader.applicationVM=app->activity->vm; loader.applicationContext=app->activity->clazz;
-    check(init(reinterpret_cast<const XrLoaderInitInfoBaseHeaderKHR*>(&loader)),"initialize loader");
-    std::vector<const char*> extensions={XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
+    Vr::Platform::initializeLoader();
+    std::vector<const char*> extensions=Vr::Platform::requiredExtensions();
     uint32_t extensionCount=0;
     check(xrEnumerateInstanceExtensionProperties(nullptr,0,&extensionCount,nullptr),"extension count");
     std::vector<XrExtensionProperties> available(extensionCount,{XR_TYPE_EXTENSION_PROPERTIES});
@@ -70,9 +76,7 @@ QuestXr::QuestXr() {
                     " space warp probe: ",spaceWarpProbe?"active":spaceWarpListed?"off (vrSpaceWarpProbeOff=1)":"off (not listed)");
     for(const char* optional:{XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,XR_KHR_VISIBILITY_MASK_EXTENSION_NAME,XR_KHR_VULKAN_SWAPCHAIN_FORMAT_LIST_EXTENSION_NAME})
       if(std::any_of(available.begin(),available.end(),[&](const auto& e){return std::strcmp(e.extensionName,optional)==0;})) extensions.push_back(optional);
-    XrInstanceCreateInfoAndroidKHR android{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
-    android.applicationVM=app->activity->vm; android.applicationActivity=app->activity->clazz;
-    XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO}; info.next=&android;
+    XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO}; info.next=Vr::Platform::instanceCreateNext();
     std::strcpy(info.applicationInfo.applicationName,"Gothic II VR");
     std::strcpy(info.applicationInfo.engineName,"OpenGothic Tempest");
     info.applicationInfo.applicationVersion=61; info.applicationInfo.engineVersion=1;
@@ -114,12 +118,12 @@ QuestXr::QuestXr() {
     check(requirementsFn(instance,system,&requirements),"Vulkan requirements");
     const auto maximum=VK_MAKE_API_VERSION(0,XR_VERSION_MAJOR(requirements.maxApiVersionSupported),XR_VERSION_MINOR(requirements.maxApiVersionSupported),0);
     if(requirements.minApiVersionSupported>XR_MAKE_VERSION(1,3,0)) throw std::runtime_error("OpenXR needs Vulkan newer than Tempest supports");
-    Tempest::vulkanCreateHooks={this,maximum,createInstance,physicalDevice,createDevice};
+    Tempest::vulkanCreateHooks()={this,maximum,createInstance,physicalDevice,createDevice};
     createActions();
     active=this;
-    Tempest::AndroidApi::setVrRenderLoop(true);
+    Vr::Platform::setVrRenderLoop(true);
   } catch(...) {
-    Tempest::vulkanCreateHooks={};
+    Tempest::vulkanCreateHooks()={};
     if(actions!=XR_NULL_HANDLE) xrDestroyActionSet(actions);
     if(instance!=XR_NULL_HANDLE) xrDestroyInstance(instance);
     throw;
@@ -128,8 +132,8 @@ QuestXr::QuestXr() {
 
 QuestXr::~QuestXr() {
   detach();
-  Tempest::AndroidApi::setVrRenderLoop(false);
-  Tempest::vulkanCreateHooks={};
+  Vr::Platform::setVrRenderLoop(false);
+  Tempest::vulkanCreateHooks()={};
   if(actions!=XR_NULL_HANDLE) xrDestroyActionSet(actions);
   if(instance!=XR_NULL_HANDLE) xrDestroyInstance(instance);
   active=nullptr;
@@ -176,43 +180,130 @@ void QuestXr::createActions() {
   XrActionSetCreateInfo set{XR_TYPE_ACTION_SET_CREATE_INFO};
   std::strcpy(set.actionSetName,"gothic"); std::strcpy(set.localizedActionSetName,"Gothic controls");
   check(xrCreateActionSet(instance,&set,&actions),"create action set");
-  stick=action("move_turn",XR_ACTION_TYPE_VECTOR2F_INPUT);
+  // Two single-hand actions instead of one action with two subaction paths: see
+  // the member comment in questxr.h for why a shared action is not used here.
+  stickLeft=action("move",XR_ACTION_TYPE_VECTOR2F_INPUT,false);
+  stickRight=action("turn",XR_ACTION_TYPE_VECTOR2F_INPUT,false);
   trigger=action("trigger",XR_ACTION_TYPE_FLOAT_INPUT); grip=action("grip",XR_ACTION_TYPE_FLOAT_INPUT);
   primary=action("primary",XR_ACTION_TYPE_BOOLEAN_INPUT); secondary=action("secondary",XR_ACTION_TYPE_BOOLEAN_INPUT);
   stickClick=action("stick_click",XR_ACTION_TYPE_BOOLEAN_INPUT); menu=action("menu",XR_ACTION_TYPE_BOOLEAN_INPUT,false);
   aim=action("aim",XR_ACTION_TYPE_POSE_INPUT);
   gripPoseAction=action("hand_grip_pose",XR_ACTION_TYPE_POSE_INPUT);
   hapticAction=action("hand_haptic",XR_ACTION_TYPE_VIBRATION_OUTPUT);
+  // Suggested bindings, one list per interaction profile. The profiles do not
+  // share a component set — wands have no thumbstick and no face buttons, Index
+  // has no menu button, the simple controller has only select and menu — and a
+  // binding to a component a profile does not define makes
+  // xrSuggestInteractionProfileBindings reject that profile's entire list. So each
+  // list is built from scratch instead of being derived from Touch's, and one
+  // rejection is logged and skipped rather than taking the others, or the session,
+  // down with it. The runtime activates whichever profile matches the physical
+  // device, so the Quest still binds Touch exactly as before.
   std::vector<XrActionSuggestedBinding> bindings;
-  for(uint32_t i=0;i<2;++i) {
-    const std::string h=i==0?"/user/hand/left/input/":"/user/hand/right/input/";
-    const auto bind=[&](XrAction a,const char* component) { bindings.push_back({a,path((h+component).c_str())}); };
-    bind(stick,"thumbstick"); bind(stickClick,"thumbstick/click"); bind(trigger,"trigger/value");
-    bind(grip,"squeeze/value"); bind(aim,"aim/pose");
-    bind(gripPoseAction,"grip/pose");
-    bindings.push_back({hapticAction,path((std::string(i==0?"/user/hand/left/":"/user/hand/right/")+"output/haptic").c_str())});
-    bind(primary,i==0?"x/click":"a/click"); bind(secondary,i==0?"y/click":"b/click");
+  // both(): the same /input/ component on each hand. one(): a single hand, with
+  // the sub-path spelled out because haptics live under /output/ instead.
+  const auto both=[&](XrAction a,const char* component) {
+    bindings.push_back({a,path((std::string("/user/hand/left/input/")+component).c_str())});
+    bindings.push_back({a,path((std::string("/user/hand/right/input/")+component).c_str())});
+  };
+  const auto one=[&](XrAction a,uint32_t hand,const char* suffix) {
+    bindings.push_back({a,path((std::string(hand==0?"/user/hand/left/":"/user/hand/right/")+suffix).c_str())});
+  };
+  // stickLeft only ever binds to the left hand's component, stickRight only to
+  // the right hand's: each action is single-hand by construction, so there is no
+  // subaction path for a runtime to mis-disambiguate.
+  const auto sticks=[&](const char* component) {
+    one(stickLeft,0,(std::string("input/")+component).c_str());
+    one(stickRight,1,(std::string("input/")+component).c_str());
+  };
+  const auto haptics=[&]{ one(hapticAction,0,"output/haptic"); one(hapticAction,1,"output/haptic"); };
+  const auto poses=[&]{ both(aim,"aim/pose"); both(gripPoseAction,"grip/pose"); haptics(); };
+  uint32_t accepted=0;
+  const auto suggest=[&](const char* profile) {
+    XrInteractionProfileSuggestedBinding info{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+    info.interactionProfile=path(profile);
+    info.countSuggestedBindings=uint32_t(bindings.size()); info.suggestedBindings=bindings.data();
+    const auto result=xrSuggestInteractionProfileBindings(instance,&info);
+    if(XR_SUCCEEDED(result)) { ++accepted; Tempest::Log::i("OpenXR bindings accepted: ",bindings.size()," for ",profile); }
+    else Tempest::Log::e("OpenXR bindings rejected for ",profile,": ",int(result),"; that device keeps the runtime's own defaults");
+    bindings.clear();
+  };
+  // Touch: the shipped Quest set, unchanged.
+  sticks("thumbstick"); both(stickClick,"thumbstick/click"); both(trigger,"trigger/value");
+  both(grip,"squeeze/value"); poses();
+  one(primary,0,"input/x/click"); one(primary,1,"input/a/click");
+  one(secondary,0,"input/y/click"); one(secondary,1,"input/b/click");
+  one(menu,0,"input/menu/click");
+  suggest("/interaction_profiles/oculus/touch_controller");
+  // Index: A/B on both hands, so every mapped button is reachable. It defines no
+  // menu/click, and system/click is reserved by the runtime, which leaves the left
+  // trackpad's force sensor as the only deliberate press for the settings chord.
+  sticks("thumbstick"); both(stickClick,"thumbstick/click"); both(trigger,"trigger/value");
+  both(grip,"squeeze/value"); poses();
+  both(primary,"a/click"); both(secondary,"b/click");
+  one(menu,0,"input/trackpad/force");
+  suggest("/interaction_profiles/valve/index_controller");
+  // Vive wand: trackpad instead of a thumbstick, squeeze is a click rather than an
+  // axis (the float grip action then reads 0 or 1), and the only button left over
+  // once the left menu opens the settings chord is the right menu.
+  sticks("trackpad"); both(stickClick,"trackpad/click"); both(trigger,"trigger/value");
+  both(grip,"squeeze/click"); poses();
+  one(menu,0,"input/menu/click"); one(primary,1,"input/menu/click");
+  suggest("/interaction_profiles/htc/vive_controller");
+  // WMR: thumbstick and trackpad both exist, so the trackpad click is free to be
+  // the primary button; squeeze is a click here too.
+  sticks("thumbstick"); both(stickClick,"thumbstick/click"); both(trigger,"trigger/value");
+  both(grip,"squeeze/click"); poses(); both(primary,"trackpad/click");
+  one(menu,0,"input/menu/click"); one(secondary,1,"input/menu/click");
+  suggest("/interaction_profiles/microsoft/motion_controller");
+  // The floor: select, menu, both poses and haptics, and nothing else. Trigger and
+  // grip share the one select button so that squeezing still closes the hand and
+  // the settings chord stays reachable; there is no stick, so no locomotion.
+  both(trigger,"select/click"); both(grip,"select/click"); poses();
+  one(menu,0,"input/menu/click"); one(primary,1,"input/menu/click");
+  suggest("/interaction_profiles/khr/simple_controller");
+  if(accepted==0) throw std::runtime_error("OpenXR: no interaction profile accepted its bindings");
+}
+
+void QuestXr::reportInteractionProfiles() noexcept {
+  // XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED: name the device per hand, so a
+  // bug report identifies it, and note whether its buttons are too few for the
+  // Touch-shaped default button map (Vr::Settings::adoptControllerDefaults).
+  if(session==XR_NULL_HANDLE) return;
+  bool reduced=false;
+  for(uint32_t h=0;h<2;++h) {
+    XrInteractionProfileState state{XR_TYPE_INTERACTION_PROFILE_STATE};
+    if(XR_FAILED(xrGetCurrentInteractionProfile(session,hands[h],&state))) continue;
+    char name[XR_MAX_PATH_LENGTH]={"<none>"}; uint32_t length=0;
+    if(state.interactionProfile!=XR_NULL_PATH)
+      if(XR_FAILED(xrPathToString(instance,state.interactionProfile,uint32_t(sizeof(name)),&length,name))) std::strcpy(name,"<unknown>");
+    Tempest::Log::i("OpenXR interaction profile ",h==0?"left":"right",": ",name);
+    if(std::strstr(name,"vive_controller")!=nullptr || std::strstr(name,"simple_controller")!=nullptr) reduced=true;
   }
-  bindings.push_back({menu,path("/user/hand/left/input/menu/click")});
-  XrInteractionProfileSuggestedBinding info{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-  info.interactionProfile=path("/interaction_profiles/oculus/touch_controller");
-  info.countSuggestedBindings=uint32_t(bindings.size()); info.suggestedBindings=bindings.data();
-  check(xrSuggestInteractionProfileBindings(instance,&info),"Touch bindings");
+  reducedButtonSet=reduced; ++profileChanges;
 }
 
 void QuestXr::attach(Tempest::Device& device) {
   vk=Tempest::VulkanApi::nativeContext(device);
+  // Nothing between here and the view enumeration below used to log, so a
+  // failure in any of these calls left log.txt ending at Tempest's device
+  // setup. Each step announces itself, and the thrown message names the call.
+  Tempest::Log::i("OpenXR attach: Vulkan queue family=",vk.queueFamily,
+                  " instance=",vk.instance!=VK_NULL_HANDLE," physical=",vk.physicalDevice!=VK_NULL_HANDLE,
+                  " device=",vk.device!=VK_NULL_HANDLE," queue=",vk.queue!=VK_NULL_HANDLE);
   try {
     XrGraphicsBindingVulkan2KHR binding{XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR};
     binding.instance=vk.instance; binding.physicalDevice=vk.physicalDevice; binding.device=vk.device;
     binding.queueFamilyIndex=vk.queueFamily; binding.queueIndex=0;
     XrSessionCreateInfo info{XR_TYPE_SESSION_CREATE_INFO}; info.next=&binding; info.systemId=system;
     check(xrCreateSession(instance,&info,&session),"create Vulkan session");
+    Tempest::Log::i("OpenXR attach: session created");
     XrReferenceSpaceCreateInfo space{XR_TYPE_REFERENCE_SPACE_CREATE_INFO}; space.poseInReferenceSpace.orientation.w=1;
     space.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_LOCAL;
     check(xrCreateReferenceSpace(session,&space,&localSpace),"local space");
     space.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_VIEW;
     check(xrCreateReferenceSpace(session,&space,&viewSpace),"view space");
+    Tempest::Log::i("OpenXR attach: reference spaces created");
     for(uint32_t i=0;i<2;++i) {
       XrActionSpaceCreateInfo hand{XR_TYPE_ACTION_SPACE_CREATE_INFO}; hand.action=aim; hand.subactionPath=hands[i]; hand.poseInActionSpace.orientation.w=1;
       check(xrCreateActionSpace(session,&hand,&handSpace[i]),"hand space");
@@ -222,15 +313,34 @@ void QuestXr::attach(Tempest::Device& device) {
     XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     attachInfo.countActionSets=1; attachInfo.actionSets=&actions;
     check(xrAttachSessionActionSets(session,&attachInfo),"attach Touch actions");
+    Tempest::Log::i("OpenXR attach: action sets attached");
     uint32_t count=0;
     check(xrEnumerateViewConfigurationViews(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,0,&count,nullptr),"view count");
     if(count!=2) throw std::runtime_error("OpenXR requires exactly two stereo views");
     XrViewConfigurationView config[2]={{XR_TYPE_VIEW_CONFIGURATION_VIEW},{XR_TYPE_VIEW_CONFIGURATION_VIEW}};
     check(xrEnumerateViewConfigurationViews(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,2,&count,config),"stereo views");
+    for(uint32_t i=0;i<2;++i)
+      Tempest::Log::i("OpenXR view ",i," recommended ",config[i].recommendedImageRectWidth,"x",config[i].recommendedImageRectHeight,
+                      " max ",config[i].maxImageRectWidth,"x",config[i].maxImageRectHeight,
+                      " samples ",config[i].recommendedSwapchainSampleCount);
     // A conservative first stereo target. OpenXR still supplies the complete per-eye FOV.
-    extent.width=std::min(1280u,std::min(config[0].recommendedImageRectWidth,config[1].recommendedImageRectWidth));
+    // Every full-resolution render target is sized from this extent, and desktop
+    // runtimes ask for two to three times the Quest's pixel count, so the width cap
+    // is the one place that bounds the allocation. Gothic.ini [ENGINE] vrMaxEyeWidth
+    // moves it (<=0 keeps the 1280 that shipped); vrMaxEyeHeight is an extra cap for
+    // runtimes whose recommendation is unusually tall, off unless it is set.
+    IniFile eyeIni(u"Gothic.ini");
+    const int widthOption=eyeIni.getI("ENGINE","vrMaxEyeWidth"),heightOption=eyeIni.getI("ENGINE","vrMaxEyeHeight");
+    extent.width=std::min(widthOption>0?uint32_t(widthOption):1280u,std::min(config[0].recommendedImageRectWidth,config[1].recommendedImageRectWidth));
     extent.height=std::min(config[0].recommendedImageRectHeight,config[1].recommendedImageRectHeight)*extent.width/config[0].recommendedImageRectWidth;
     extent.height=(extent.height+1u)&~1u;
+    if(heightOption>0 && extent.height>uint32_t(heightOption)) {
+      // Shortening without narrowing would stretch the eye, so keep the aspect.
+      const uint32_t capped=std::max(2u,uint32_t(heightOption)&~1u);
+      extent.width=std::max(2u,extent.width*capped/extent.height); extent.height=capped;
+      }
+    Tempest::Log::i("OpenXR eye image ",extent.width,"x",extent.height," caps: width ",widthOption>0?widthOption:1280,
+                    " height ",heightOption>0?heightOption:0," (0 = none)");
     check(xrEnumerateSwapchainFormats(session,0,&count,nullptr),"format count");
     std::vector<int64_t> formats(count);
     check(xrEnumerateSwapchainFormats(session,count,&count,formats.data()),"formats");
@@ -265,8 +375,7 @@ void QuestXr::attach(Tempest::Device& device) {
         timestampPeriod=props.limits.timestampPeriod; timestampMask=bits==64?~uint64_t(0):((uint64_t(1)<<bits)-1);
       }
     }
-    if(std::find(formats.begin(),formats.end(),int64_t(VK_FORMAT_R8G8B8A8_SRGB))==formats.end())
-      throw std::runtime_error("OpenXR does not expose RGBA8 sRGB swapchains");
+    selectSwapchainFormat(formats);
     createSwapchains(device);
     VkCommandPoolCreateInfo pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pool.queueFamilyIndex=vk.queueFamily; pool.flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -275,9 +384,70 @@ void QuestXr::attach(Tempest::Device& device) {
     VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     for(auto& eye:eyes) for(auto& copy:eye.copies)
       checkVk(vkCreateFence(vk.device,&fence,nullptr,&copy.fence),"copy fence");
+    {
+      // What the eye resolution actually costs, logged before anything renders so a
+      // runtime asking for a large image is visible in the log rather than as an
+      // out-of-memory much later. The renderer's full-resolution targets are
+      // allocated once and reused by both eyes (MainWindow sizes its widget from
+      // this extent), so the engine side is a per-pixel figure: sceneLinear 4 +
+      // zbuffer 4 + sceneOpaque 4 + sceneDepth 4 + gbufDiffuse 4 + gbufNormal 4 +
+      // HiZ ~1 + vrOutput 4 = ~29 B/px, plus ~7 B/px of CMAA2 buffers when
+      // anti-aliasing is on. Shadow maps, sky LUTs and meshes do not scale with it.
+      constexpr double engineBytesPerPixel=36;
+      const double pixels=double(extent.width)*double(extent.height);
+      size_t images=0; for(const auto& eye:eyes) images+=eye.images.size();
+      const double xrBytes=pixels*4.0*double(images),engineBytes=pixels*engineBytesPerPixel;
+      Tempest::Log::i("VR eye memory: ",pixels/1e6," Mpx per eye, ",images," XR images ~",xrBytes/1048576.0,
+                      " MiB + renderer targets ~",engineBytes/1048576.0," MiB = ~",(xrBytes+engineBytes)/1048576.0," MiB");
+    }
     Tempest::Log::i("OpenXR session ready: two eyes ",extent.width,"x",extent.height,"; Touch actions attached");
     Tempest::Log::i("OpenXR direct output capability L/R=",!eyes[0].targets.empty(),"/",!eyes[1].targets.empty()," formatList=",formatListAvailable);
+    // The submission route of every eye, and why: direct output needs a
+    // borrowed RGBA8_UNORM view of the XR image, and falls back to the
+    // intermediate-attachment copy whenever one cannot be made.
+    Tempest::Log::i("OpenXR eye submission route: ",(!eyes[0].targets.empty() && !eyes[1].targets.empty())?"direct output":"copy",
+                    " (format ",colorFormatName,
+                    colorView==VK_FORMAT_UNDEFINED?", no RGBA8_UNORM view is compatible with it":
+                      ((!eyes[0].targets.empty() && !eyes[1].targets.empty())?", RGBA8_UNORM view borrowed":", RGBA8_UNORM view rejected"),")");
   } catch(...) { detach(); throw; }
+}
+
+// Colour format of the three XR swapchains, negotiated against what the runtime
+// actually offers instead of assuming the Quest's RGBA8 sRGB.
+//
+// The preference order is a capability order, not a taste order:
+//  * R8G8B8A8_SRGB  - the only fully correct choice. The mutable-format view is
+//    R8G8B8A8_UNORM, which is exactly what VulkanApi::borrowColorAttachment
+//    accepts (gapi/vulkanapi.cpp: RGBA8_UNORM in COLOR_ATTACHMENT_OPTIMAL and
+//    nothing else), so direct output is possible; and queueEyeCopy's texel-exact
+//    vkCmdCopyImage lands the tonemapper's sRGB-encoded RGBA8_UNORM bytes in an
+//    sRGB image the compositor then decodes.
+//  * B8G8R8A8_SRGB  - accepted so a runtime without RGBA8 still starts, but no
+//    RGBA8_UNORM view is compatible with it, so direct output is off, and the
+//    texel copy exchanges red and blue. Logged as an error, not ignored.
+//  * the UNORM variants - a last resort; the compositor is told the already
+//    encoded bytes are linear.
+void QuestXr::selectSwapchainFormat(const std::vector<int64_t>& formats) {
+  struct Candidate { VkFormat format,view; const char* name; bool swapsRedBlue; };
+  // view==VK_FORMAT_UNDEFINED marks a candidate that cannot serve direct output.
+  static const Candidate preference[]={
+    {VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM,"R8G8B8A8_SRGB", false},
+    {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_UNDEFINED,     "B8G8R8A8_SRGB", true },
+    {VK_FORMAT_R8G8B8A8_UNORM,VK_FORMAT_R8G8B8A8_UNORM,"R8G8B8A8_UNORM",false},
+    {VK_FORMAT_B8G8R8A8_UNORM,VK_FORMAT_UNDEFINED,     "B8G8R8A8_UNORM",true },
+    };
+  for(const auto& candidate:preference) {
+    if(std::find(formats.begin(),formats.end(),int64_t(candidate.format))==formats.end()) continue;
+    colorFormat=candidate.format; colorView=candidate.view; colorFormatName=candidate.name;
+    colorSwapsRedBlue=candidate.swapsRedBlue;
+    Tempest::Log::i("OpenXR swapchain format: ",colorFormatName," (",int(colorFormat),")",
+                    colorView==VK_FORMAT_UNDEFINED?"; direct output unavailable, copy route only":"; direct output eligible");
+    if(colorSwapsRedBlue)
+      Tempest::Log::e("OpenXR swapchain format ",colorFormatName," has BGRA channel order: the eye copy is a texel-exact "
+                      "vkCmdCopyImage, so red and blue will be exchanged. Please report the runtime.");
+    return;
+    }
+  throw std::runtime_error("OpenXR exposes no 8-bit RGBA/BGRA swapchain format");
 }
 
 void QuestXr::createSwapchains(Tempest::Device& device) {
@@ -285,12 +455,14 @@ void QuestXr::createSwapchains(Tempest::Device& device) {
   for(auto& eye:eyes) {
     XrSwapchainCreateInfo sc{XR_TYPE_SWAPCHAIN_CREATE_INFO};
     sc.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-    sc.format=VK_FORMAT_R8G8B8A8_SRGB; sc.sampleCount=1; sc.width=extent.width; sc.height=extent.height;
+    sc.format=colorFormat; sc.sampleCount=1; sc.width=extent.width; sc.height=extent.height;
     sc.faceCount=1; sc.arraySize=1; sc.mipCount=1;
-    bool mutableColor=(&eye!=&eyes[2]);
-    const VkFormat viewFormats[]={VK_FORMAT_R8G8B8A8_SRGB,VK_FORMAT_R8G8B8A8_UNORM};
+    // The HUD image never renders directly, and a format without a compatible
+    // RGBA8_UNORM view cannot: both keep a plain, immutable swapchain.
+    bool mutableColor=(&eye!=&eyes[2]) && colorView!=VK_FORMAT_UNDEFINED;
+    const VkFormat viewFormats[]={colorFormat,colorView};
     XrVulkanSwapchainFormatListCreateInfoKHR formatList{XR_TYPE_VULKAN_SWAPCHAIN_FORMAT_LIST_CREATE_INFO_KHR};
-    formatList.viewFormatCount=2; formatList.viewFormats=viewFormats;
+    formatList.viewFormatCount=colorFormat==colorView?1u:2u; formatList.viewFormats=viewFormats;
     if(mutableColor) {
       sc.usageFlags|=XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
       if(formatListAvailable) sc.next=&formatList;
@@ -311,8 +483,13 @@ void QuestXr::createSwapchains(Tempest::Device& device) {
         eye.targets.reserve(eye.images.size());
         for(const auto& image:eye.images)
           eye.targets.push_back(Tempest::VulkanApi::borrowColorAttachment(device,
-            {image.image,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},extent.width,extent.height));
+            {image.image,colorView,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},extent.width,extent.height));
       } catch(const std::exception& e) {
+        // borrowColorAttachment throws std::invalid_argument for anything that
+        // is not RGBA8_UNORM in COLOR_ATTACHMENT_OPTIMAL. An empty targets list
+        // is the copy fallback: directOutputReady() then reports false and
+        // acquireRenderTarget() returns null, so renderVr() renders into
+        // vrOutput and copyEye/queueEyeCopy transports it.
         eye.targets.clear();
         Tempest::Log::i("OpenXR UNORM target view unavailable; copy fallback: ",e.what());
       }
@@ -360,7 +537,7 @@ bool QuestXr::beginFrame() {
         reportVisibilityMasks();
         if(requestRefresh) Tempest::Log::i("OpenXR request 72 Hz result=",int(requestRefresh(session,72.f)));
         if(getRefresh) getRefresh(session,&refreshHz);
-        if(setThread) Tempest::Log::i("OpenXR main thread result=",int(setThread(session,XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,uint32_t(gettid()))));
+        if(setThread) Tempest::Log::i("OpenXR main thread result=",int(setThread(session,XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,Vr::Platform::currentThreadId())));
         perfCpuApplied=perfGpuApplied=-1; applyPerformanceLevel();
       } else if(state==XR_SESSION_STATE_STOPPING && running) {
         drainCopies(); // Complete the last submitted frame before stopping its session.
@@ -368,6 +545,7 @@ bool QuestXr::beginFrame() {
       } else if(state==XR_SESSION_STATE_EXITING || state==XR_SESSION_STATE_LOSS_PENDING) exitRequested=true;
     } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) exitRequested=true;
     else if(event.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) { referenceValid=false; roomMotion.invalidate(); }
+    else if(event.type==XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED) reportInteractionProfiles();
     else if(event.type==XR_TYPE_EVENT_DATA_DISPLAY_REFRESH_RATE_CHANGED_FB) refreshHz=reinterpret_cast<XrEventDataDisplayRefreshRateChangedFB*>(&event)->toDisplayRefreshRate;
     else if(event.type==XR_TYPE_EVENT_DATA_PERF_SETTINGS_EXT) {
       // Runtime clock/thermal notification: domain 1 = CPU, 2 = GPU; sub-domain
@@ -557,8 +735,12 @@ void QuestXr::updateInput() {
     gripValues[h]=analog(grip);
     if(gripValues[h]>0.55f) pad.buttons|=h==0?Tempest::GamepadState::L1:Tempest::GamepadState::R1;
     const float t=analog(trigger);
-    get.action=stick; XrActionStateVector2f value{XR_TYPE_ACTION_STATE_VECTOR2F};
-    check(xrGetActionStateVector2f(session,&get,&value),"Touch stick");
+    // stickLeft/stickRight declare no subaction paths of their own (they are
+    // single-hand actions), so this query must not carry the outer hand's
+    // subactionPath: a non-null path on an action that declares none is invalid.
+    XrActionStateGetInfo stickGet{XR_TYPE_ACTION_STATE_GET_INFO}; stickGet.action=h==0?stickLeft:stickRight;
+    XrActionStateVector2f value{XR_TYPE_ACTION_STATE_VECTOR2F};
+    check(xrGetActionStateVector2f(session,&stickGet,&value),"Touch stick");
     const auto v=value.isActive?value.currentState:XrVector2f{};
     if(h==0) { pad.leftStickX=v.x; pad.leftStickY=-v.y; pad.leftTrigger=t; }
     else { pad.rightStickX=v.x; pad.rightStickY=-v.y; pad.rightTrigger=t; }

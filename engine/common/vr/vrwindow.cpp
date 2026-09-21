@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 #if defined(GOTHIC2VR_OPENXR)
 #include "questxr.h"
+#include "vrplatform.h"
 #include "vr/vrhudrect.h"
 #include "gothic.h"
 #include "world/objects/npc.h"
@@ -11,11 +12,14 @@
 #include <Tempest/Application>
 #include <Tempest/Painter>
 #include <Tempest/Brush>
+#include <Tempest/Except>
 #include <Tempest/Log>
 #include <cstdio>
 #include <cstdlib>
+#if defined(__ANDROID__)
 #include <fcntl.h>
 #include <unistd.h>
+#endif
 #include <string_view>
 #include <sstream>
 #include <fstream>
@@ -23,13 +27,20 @@ using namespace Tempest;
 
 // Adreno clock of a sampled frame (profiler CSV gpu_clock_mhz, ):
 // one pread of the kgsl node kept open (sysfs re-reads at offset 0); -1 = unreadable.
+// The kgsl node, <fcntl.h>/<unistd.h> and ssize_t are Android only; every other
+// platform reports the "unknown" value the profiler already carries by default
+// (vr/vrprofiler.h gpuClockMhz=-1) and the CSV column stays -1.
 static double readGpuClockMhz() {
+#if defined(__ANDROID__)
   static const int fd=::open("/sys/class/kgsl/kgsl-3d0/gpuclk",O_RDONLY|O_CLOEXEC);
   if(fd<0) return -1;
   char buf[32]={};
   const ssize_t n=::pread(fd,buf,sizeof(buf)-1,0);
   if(n<=0) return -1;
   return std::strtod(buf,nullptr)/1e6;
+#else
+  return -1;
+#endif
 }
 
 bool MainWindow::tickVrMenu(const GamepadState& pad,uint64_t now) {
@@ -346,12 +357,51 @@ void MainWindow::renderVr() {
     }
   } frame{xr,vrProfiler,fence,vrHudFence,commands,prepFence,prepCommands,prepRecorded,&vrHudCommand};
   const double waitStart=Vr::milliseconds();
+  // beginFrame() blocks inside xrWaitFrame until the runtime's predicted display
+  // time: that is the frame pacing, and it is deliberate. It also means the
+  // caller's thread is parked, and on Windows this call sits on the Win32
+  // message pump (lib/Tempest/Engine/system/api/windowsapi.cpp dispatches render
+  // from the same loop that dispatches messages). While a world loads, one
+  // renderVr() can take seconds and the desktop mirror window stops answering
+  // WM_PAINT, so Windows paints it over and labels it "Not Responding". The
+  // headset keeps its frames; only the mirror looks stalled. Documented rather
+  // than worked around: a render thread would have to own every Tempest
+  // resource, which is a far larger change than a transient title-bar label.
   const bool render=xr.beginFrame();
   vrProfiler.current.wait=Vr::milliseconds()-waitStart; vrProfiler.refresh=xr.refreshRate();
   if(!render) {
     vrProfiler.suspend();
     if(xr.shouldExit()) { SystemApi::exit(); return; }
     vrGameplay.suspend();clearInput(); Application::sleep(10); return;
+  }
+  // Blank stereo frames (Gothic.ini [ENGINE] vrBlankFrame=1, default off; M2's
+  // bring-up aid, opt-in and never the normal path). Both eyes are cleared to a
+  // flat colour and submitted as a full projection layer, so the session, the
+  // swapchain format negotiation, the copy route and xrEndFrame are exercised
+  // without the game renderer taking part.
+  static const bool blankFrame=Gothic::settingsGetI("ENGINE","vrBlankFrame")!=0;
+  if(blankFrame) {
+    static bool blankLogged=false;
+    if(!blankLogged) { Log::i("VR blank frame mode active (Gothic.ini [ENGINE] vrBlankFrame=1): the game renderer is bypassed"); blankLogged=true; }
+    xr.drainCopies();
+    for(auto& submitted:fence) submitted.wait();
+    for(auto& submitted:prepFence) submitted.wait();
+    vrHudFence.wait();
+    auto& cmd=commands[cmdId];
+    {
+      auto enc=cmd.startEncoding(device);
+      enc.setFramebuffer({{vrOutput,Vec4(0.10f,0.18f,0.32f,1.f),Tempest::Preserve}});
+    }
+    fence[cmdId]=device.submit(cmd);
+    // The whole image, so the compositor shows the flat colour edge to edge.
+    for(uint32_t eye=0;eye<2;++eye) { xr.setEyeRect(eye,0,0); xr.copyEye(eye,textureCast<const Texture2d&>(vrOutput)); }
+    frame.world=true; frame.overlay=false; frame.complete=true;
+#if defined(GOTHIC2VR_MIRROR)
+    drawVrMirror(); presentVrMirror();
+#endif
+    vrPinnedSlots=false;
+    cmdId=(cmdId+1u)%Resources::MaxFramesInFlight;
+    return;
   }
   static bool once=true;
   if(once) { Gothic::inst().emitGlobalSoundWav("GAMESTART.WAV"); once=false; }
@@ -554,7 +604,19 @@ void MainWindow::renderVr() {
   renderer.setVrLocalLights(vrMenu.settings.localLights);
   renderer.setVrLightDepth(vrMenu.settings.lightDepth);
   renderer.setVrMergedTransparency(vrMenu.settings.mergedTransparency);
+#if defined(GOTHIC2VR_MIRROR)
+  // The desktop mirror samples vrOutput, and only the copy route leaves an eye
+  // image there: the XR images the direct route renders into are created
+  // without VK_IMAGE_USAGE_SAMPLED_BIT and rest in COLOR_ATTACHMENT_OPTIMAL
+  // (QuestXr::createSwapchains, VulkanApi::borrowColorAttachment), so nothing
+  // may read them back. A mirror window therefore costs the direct-output fast
+  // path. That trade is right on a desktop GPU -- direct output exists to save
+  // Adreno tiler bandwidth, and one extra full-eye copy is cheap here -- and
+  // Gothic.ini [ENGINE] vrMirrorOff=1 hands the fast path back.
+  xr.setDirectOutput(vrMenu.settings.directOutput && !vrMirrorEnabled());
+#else
   xr.setDirectOutput(vrMenu.settings.directOutput);
+#endif
   renderer.setVrTiledLights(vrMenu.settings.tiledLights);
   renderer.setVrSlabLights(vrMenu.settings.slabLights);
   renderer.setVrSubgroupTiles(vrMenu.settings.subgroupTiles);
@@ -682,6 +744,11 @@ void MainWindow::renderVr() {
     else if(overlap) xr.queueEyeCopy(eye,textureCast<const Texture2d&>(vrOutput),&transport);
     else xr.copyEye(eye,textureCast<const Texture2d&>(vrOutput),&transport);
     recordCopy(eye);
+#if defined(GOTHIC2VR_MIRROR)
+    // The desktop mirror, recorded here because vrOutput still holds eye 0 at
+    // this point: eye 1 renders over it next, and the HUD pass after that.
+    if(eye==0 && directTarget==nullptr) drawVrMirror();
+#endif
     if(vrProfiler.sampleGpu && !overlap) { auto m=cmd.gpuTimings(); if(prepRecorded[fId]) { auto t=prepCommands[fId].gpuTimings(); t.insert(t.end(),m.begin(),m.end()); m=std::move(t); } vrProfiler.eyeGpu(eye,m); }
     if(lightRouteActive && !overlap) feedLightRoute(eye,vrProfiler.frameId,eyeRouteUsed[eye],cmd.gpuTimings());
     if(visibilityProbe) {
@@ -743,6 +810,9 @@ void MainWindow::renderVr() {
         columns+=fog.columns[i]; steps+=i*fog.columns[i];
         groups+=fog.groups[i]; groupSteps+=i*fog.groups[i];
       }
+#if defined(__ANDROID__)
+      // kgsl/cpufreq sysfs and sched_getcpu() are Adreno/bionic only; the
+      // desktop build simply omits this diagnostic line.
       if(eye==0) {
         // Adreno clock and thermal state of this diagnostic frame: pass costs
         // of long sessions are only comparable at the same clock.
@@ -764,6 +834,7 @@ void MainWindow::renderVr() {
           }
         Log::i("VR cpu clock frame=",vrProfiler.frameId," core=",sched_getcpu(),cpu.c_str());
       }
+#endif
       Log::i("VR fog work frame=",vrProfiler.frameId," eye=",eye," columns=",columns," steps=",steps,
              " fullColumns=",fog.columns[32]," groups=",groups," groupMaxSteps=",groupSteps);
       vrProfiler.fogSteps[eye]=columns>0?float(steps)/float(columns):0;
@@ -855,6 +926,84 @@ void MainWindow::renderVr() {
   }
   vrPinnedSlots=pipeline;
   frame.complete=true;
+#if defined(GOTHIC2VR_MIRROR)
+  presentVrMirror();
+#endif
   cmdId=(cmdId+1u)%Resources::MaxFramesInFlight;
 }
+
+#if defined(GOTHIC2VR_MIRROR)
+// Desktop mirror of eye 0 (Gothic.ini [ENGINE] vrMirrorOff=1 disables it, which
+// also restores the direct-output fast path -- see the setDirectOutput call in
+// renderVr). The mirror is off on any build without a desktop window.
+bool MainWindow::vrMirrorEnabled() {
+  static const bool enabled=Gothic::settingsGetI("ENGINE","vrMirrorOff")==0;
+  static bool logged=false;
+  if(!logged) { Log::i("VR desktop mirror: ",enabled?"active (eye 0; direct output disabled while mirroring)":"off"); logged=true; }
+  return enabled;
+  }
+
+void MainWindow::drawVrMirror() {
+  vrMirrorDrawn=false;
+  if(!vrMirrorEnabled() || vrOutput.isEmpty()) return;
+  // Frame pacing. Tempest's Vulkan swapchain picks VK_PRESENT_MODE_FIFO_KHR
+  // (gapi/vulkan/vswapchain.cpp findSwapPresentMode) and acquires the next
+  // image at the end of present(), with an infinite fence wait. Presenting
+  // every VR frame would therefore park the VR loop on the desktop monitor's
+  // vsync as soon as the FIFO queue fills, dragging a 90 Hz headset down to the
+  // monitor's rate. Presenting at ~30 Hz keeps the queue short enough that the
+  // acquire never blocks, and a mirror does not need more.
+  const uint64_t now=Application::tickCount();
+  if(vrMirrorPresented!=0 && now-vrMirrorPresented<33) return;
+  // A minimized window has no surface worth presenting to, and the VR loop
+  // keeps running without one (Vr::Platform::setVrRenderLoop).
+  if(!Vr::Platform::mirrorVisible(hwnd())) return;
+  try {
+    vrMirrorFence.wait(); // the previous mirror, submitted a whole frame ago
+    const uint32_t srcW=uint32_t(w()),srcH=uint32_t(h());
+    const uint32_t dstW=swapchain.w(),dstH=swapchain.h();
+    if(srcW==0 || srcH==0 || dstW==0 || dstH==0) return;
+    // shaders.downscale box-filters srcSize into the dstSize push constant and
+    // divides by the texel count it covered, so it must never be asked to
+    // enlarge (an upscaled texel covers none and the division is by zero).
+    // Fit the eye inside the window at a scale of at most 1 and letterbox the
+    // rest; the viewport starts at the origin because the shader derives its
+    // source texel from gl_FragCoord directly.
+    const float fit=std::min(1.f,std::min(float(dstW)/float(srcW),float(dstH)/float(srcH)));
+    const int fitW=std::max(1,int(float(srcW)*fit)),fitH=std::max(1,int(float(srcH)*fit));
+    auto& cmd=vrMirrorCommand;
+    {
+      auto enc=cmd.startEncoding(device);
+      enc.setDebugMarker("VR mirror");
+      enc.setFramebuffer({{swapchain[swapchain.currentImage()],Vec4(),Tempest::Preserve}});
+      enc.setViewport(0,0,fitW,fitH);
+      enc.setPushData(IVec2(fitW,fitH));
+      enc.setBinding(0,vrOutput,Sampler::nearest());
+      enc.setPipeline(Shaders::inst().downscale);
+      enc.draw(nullptr,0,3);
+    }
+    vrMirrorFence=device.submit(cmd);
+    vrMirrorDrawn=true;
+    }
+  catch(const Tempest::SwapchainSuboptimal&) {
+    Log::e("VR mirror swapchain is outdated - reset");
+    device.waitIdle();
+    swapchain.reset();
+    }
+  }
+
+void MainWindow::presentVrMirror() {
+  if(!vrMirrorDrawn) return;
+  vrMirrorDrawn=false;
+  try {
+    device.present(swapchain);
+    vrMirrorPresented=Application::tickCount();
+    }
+  catch(const Tempest::SwapchainSuboptimal&) {
+    Log::e("VR mirror swapchain is outdated - reset");
+    device.waitIdle();
+    swapchain.reset();
+    }
+  }
+#endif
 #endif

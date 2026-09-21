@@ -25,8 +25,10 @@
 #include "build.h"
 #include "commandline.h"
 #include "diagnostics/baselinesmoke.h"
+#include "diagnostics/vrinfo.h"
 #include "vr/questxr.h"
 #include <cstdio>
+#include <optional>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -79,6 +81,49 @@ std::unique_ptr<Tempest::AbstractGraphicsApi> mkApi(const CommandLine& g) {
 #endif
   }
 
+static int runGame(const CommandLine& cmd) {
+#if defined(GOTHIC2VR_OPENXR)
+  // The runtime owns Vulkan device creation, so the session must exist before
+  // mkApi(). A runtime that is installed but not running fails here; report that
+  // instead of letting the exception escape main() as an unhandled crash.
+  std::optional<QuestXr> xrSession;
+  try {
+    xrSession.emplace();
+    }
+  catch(const std::exception& e) {
+    Tempest::Log::e("OpenXR startup failed: ",e.what());
+    std::cerr << "OpenXR startup failed: " << e.what() << std::endl
+              << "Start your VR runtime (SteamVR, the Oculus app, Windows Mixed Reality)" << std::endl
+              << "with the headset connected, then run this again." << std::endl
+              << "Run Gothic2Notr -vrinfo for what the runtime reports." << std::endl;
+    return 3;
+    }
+  QuestXr&             xr = *xrSession;
+#endif
+  auto                 api     = mkApi(cmd);
+  const auto           gpuName = selectDevice(*api);
+  CrashLog::setGpu(gpuName);
+
+  Tempest::Device      device{*api,gpuName};
+  CrashLog::setGpu(device.properties().name);
+#if defined(GOTHIC2VR_OPENXR)
+  xr.attach(device);
+  // The session and its swapchains must die before Tempest destroys VkDevice,
+  // including exceptions from UI/world construction or application execution.
+  struct XrSessionLifetime { QuestXr& xr; ~XrSessionLifetime() { xr.detach(); } } xrLifetime{xr};
+#endif
+
+  Resources            resources{device};
+  Gothic               gothic;
+  GameMusic            music;
+  gothic.setupGlobalScripts();
+
+  MainWindow           wx(device);
+  Tempest::Application app;
+  const int result = app.exec();
+  return result==0 ? wx.baselineExitCode() : result;
+  }
+
 int main(int argc,const char** argv) {
   try {
     BaselineSmoke::preflight(argc, argv);
@@ -87,6 +132,7 @@ int main(int argc,const char** argv) {
     std::cerr << "Baseline preflight: " << e.what() << std::endl;
     return 2;
     }
+  VrInfo::preflight(argc, argv); // -vrinfo reports and exits the process itself
 #if defined(__IOS__) || defined(__ANDROID__)
   {
     auto appdir = InstallDetect::applicationSupportDirectory();
@@ -161,29 +207,23 @@ int main(int argc,const char** argv) {
   Workers::setThreadName("Main thread");
 
   CommandLine          cmd{argc,argv};
-#if defined(GOTHIC2VR_OPENXR)
-  QuestXr              xr;
-#endif
-  auto                 api     = mkApi(cmd);
-  const auto           gpuName = selectDevice(*api);
-  CrashLog::setGpu(gpuName);
-
-  Tempest::Device      device{*api,gpuName};
-  CrashLog::setGpu(device.properties().name);
-#if defined(GOTHIC2VR_OPENXR)
-  xr.attach(device);
-  // The session and its swapchains must die before Tempest destroys VkDevice,
-  // including exceptions from UI/world construction or application execution.
-  struct XrSessionLifetime { QuestXr& xr; ~XrSessionLifetime() { xr.detach(); } } xrLifetime{xr};
-#endif
-
-  Resources            resources{device};
-  Gothic               gothic;
-  GameMusic            music;
-  gothic.setupGlobalScripts();
-
-  MainWindow           wx(device);
-  Tempest::Application app;
-  const int result = app.exec();
-  return result==0 ? wx.baselineExitCode() : result;
+  // Every startup step past this point reports through an exception: the OpenXR
+  // calls name the one that failed (QuestXr::check) and Tempest throws
+  // std::system_error. With no handler here they reach the unhandled-exception
+  // filter, which in a release build without a .pdb can only print addresses, so
+  // catch them and write what() to log.txt and the console instead.
+  try {
+    return runGame(cmd);
+    }
+  catch(const std::exception& e) {
+    Tempest::Log::e("startup failed: ",e.what());
+    std::cerr << "Gothic II VR failed to start: " << e.what() << std::endl
+              << "log.txt holds the last step that succeeded." << std::endl;
+    return 4;
+    }
+  catch(...) {
+    Tempest::Log::e("startup failed: unknown exception");
+    std::cerr << "Gothic II VR failed to start: unknown error" << std::endl;
+    return 4;
+    }
   }

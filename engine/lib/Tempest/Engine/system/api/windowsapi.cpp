@@ -19,6 +19,9 @@ using namespace Tempest;
 static const wchar_t*                         wndClassName=L"Tempest.Window";
 static std::unordered_set<SystemApi::Window*> windows;
 static std::atomic_bool                       isExit{0};
+static bool                                   g_vrRenderLoop=false;
+
+void WindowsApi::setVrRenderLoop(bool enabled) { g_vrRenderLoop=enabled; }
 
 static int getIntParam(DWORD_PTR v){
   if(v>std::numeric_limits<int16_t>::max())
@@ -244,7 +247,7 @@ void WindowsApi::implProcessEvents(SystemApi::AppCallBack& cb) {
     for(auto& i:windows) {
       HWND             h  = HWND(i);
       Tempest::Window* cb = reinterpret_cast<Tempest::Window*>(GetWindowLongPtr(h,GWLP_USERDATA));
-      if(cb && !IsIconic(h))
+      if(cb && (!IsIconic(h) || g_vrRenderLoop))
         SystemApi::dispatchRender(*cb);
       }
     }

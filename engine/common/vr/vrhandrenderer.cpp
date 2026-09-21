@@ -1,27 +1,14 @@
 #include "vrhandrenderer.h"
 #if defined(GOTHIC2VR_OPENXR)
-#include "system/api/androidapi.h"
-#include <android_native_app_glue.h>
-#include <android/asset_manager.h>
 #include <Tempest/MemReader>
 #include <Tempest/Pixmap>
 #include <Tempest/Log>
 #include "graphics/mesh/protomesh.h"
 #include "shader.h"
+#include "vrassets.h"
 using namespace Tempest;
 namespace Vr {
 namespace {
-std::vector<char> asset(const char* name) {
-  auto app=AndroidApi::nativeApp();
-  if(!app || !app->activity) throw std::runtime_error("Android assets unavailable");
-  std::unique_ptr<AAsset,decltype(&AAsset_close)> file(AAssetManager_open(app->activity->assetManager,name,AASSET_MODE_BUFFER),AAsset_close);
-  if(!file) throw std::runtime_error(std::string("Missing hand asset: ")+name);
-  auto n=AAsset_getLength64(file.get());
-  if(n<=0 || n>16000000) throw std::runtime_error("Invalid hand asset size");
-  std::vector<char> bytes(static_cast<size_t>(n));size_t read=0;
-  while(read<bytes.size()) {int got=AAsset_read(file.get(),bytes.data()+read,bytes.size()-read);if(got<=0)throw std::runtime_error("Truncated hand asset");read+=size_t(got);}
-  return bytes;
-}
 Resources::Vertex vertex(Vec3 p,Vec3 n,Vec2 uv={0,0},uint32_t color=0xffffffff) {
   return {{p.x,p.y,p.z},{n.x,n.y,n.z},{uv.x,uv.y},color};
 }
@@ -31,11 +18,26 @@ Matrix itemMatrix(const Gameplay::Visual& v,const ProtoMesh& mesh) {
 }
 }
 void HandRenderer::init(Device& device) {
-  for(int i=0;i<2;++i) {
-    auto& h=hand[size_t(i)];h.asset=HandAsset::read(asset(i==0?"vrhands/BigHandLeft.uxrh":"vrhands/BigHandRight.uxrh"));
-    h.ibo=device.ibo(h.asset.indices);std::vector<Resources::Vertex> empty(h.asset.vertices.size());for(auto& vbo:h.vbo) vbo=device.vbo(BufferHeap::Upload,empty);
+  const char* file="vrhands/BigHandLeft.uxrh";
+  try {
+    for(int i=0;i<2;++i) {
+      file=i==0?"vrhands/BigHandLeft.uxrh":"vrhands/BigHandRight.uxrh";
+      auto& h=hand[size_t(i)];h.asset=HandAsset::read(Platform::asset(file));
+      h.ibo=device.ibo(h.asset.indices);std::vector<Resources::Vertex> empty(h.asset.vertices.size());for(auto& vbo:h.vbo) vbo=device.vbo(BufferHeap::Upload,empty);
+    }
+    file="vrhands/BigHandsAlbedo.png";
+    auto bytes=Platform::asset(file);MemReader reader(bytes);albedo=device.texture(Pixmap(reader));
+  } catch(const std::exception& error) {
+    // Hands are cosmetic. Name the file and the full path it was looked for at,
+    // then leave the game running without them. failed is set before the log so
+    // a path that cannot be rendered as text still disables hands; prepare()
+    // never calls init() again, so this is reported exactly once. The
+    // half-built meshes are dropped: nothing downstream may see a vertex count
+    // without a matching vertex buffer.
+    failed=true;for(auto& h:hand) {h.asset=HandAsset();h.visible=false;}
+    Log::e("VR hands disabled - ",error.what(),"; expected \"",file,"\" at \"",Platform::assetPath(file),"\"");
+    return;
   }
-  auto bytes=asset("vrhands/BigHandsAlbedo.png");MemReader reader(bytes);albedo=device.texture(Pixmap(reader));
   auto vs=GothicShader::get("vr_hands.vert.sprv"),fs=GothicShader::get("vr_hands.frag.sprv");
   const auto v=device.shader(vs.data,vs.len),f=device.shader(fs.data,fs.len);
   RenderState state;state.setCullFaceMode(RenderState::CullMode::NoCull);state.setZTestMode(RenderState::ZTestMode::LEqual);state.setZWriteEnabled(true);
@@ -53,6 +55,7 @@ void HandRenderer::prepare(Device& device,const Gameplay& gameplay,uint64_t now,
   slot&=1u;
   try {
     if(!initialized) init(device);
+    if(!initialized) return; // asset load failed; init() logged where it looked and set failed
     // Writes only this frame's vertex set. The other set may still be read by
     // the previous frame's right eye while the early left eye is recorded.
     for(int i=0;i<2;++i) {
@@ -93,7 +96,7 @@ void HandRenderer::prepare(Device& device,const Gameplay& gameplay,uint64_t now,
     lineCount=vertices.size();
     auto& lines=lineVbo[slot];
     if(lineCount>lines.size()) lines=device.vbo(BufferHeap::Upload,vertices);else if(lineCount)lines.update(vertices);
-  } catch(const std::exception& error) {Log::e("VR hands disabled after asset error: ",error.what());failed=true;objects.clear();for(auto& h:hand)h.visible=false;}
+  } catch(const std::exception& error) {Log::e("VR hands disabled after render setup error: ",error.what());failed=true;objects.clear();lineCount=0;for(auto& h:hand)h.visible=false;}
 }
 ZBuffer* HandRenderer::depthBuffer(uint32_t width,uint32_t height) {
   if(!initialized || failed) return nullptr;

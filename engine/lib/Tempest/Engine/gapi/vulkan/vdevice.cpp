@@ -503,14 +503,14 @@ void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {
 
     createInfo.pNext            = &features;
     createInfo.pEnabledFeatures = nullptr;
-    const auto result=vulkanCreateHooks.createDevice ?
-        vulkanCreateHooks.createDevice(vulkanCreateHooks.context,pdev,&createInfo,&device.impl) :
+    const auto result=vulkanCreateHooks().createDevice ?
+        vulkanCreateHooks().createDevice(vulkanCreateHooks().context,pdev,&createInfo,&device.impl) :
         vkCreateDevice(pdev,&createInfo,nullptr,&device.impl);
     if(result!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::NoDevice);
     } else {
-    const auto result=vulkanCreateHooks.createDevice ?
-        vulkanCreateHooks.createDevice(vulkanCreateHooks.context,pdev,&createInfo,&device.impl) :
+    const auto result=vulkanCreateHooks().createDevice ?
+        vulkanCreateHooks().createDevice(vulkanCreateHooks().context,pdev,&createInfo,&device.impl) :
         vkCreateDevice(pdev,&createInfo,nullptr,&device.impl);
     if(result!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::NoDevice);

@@ -5,11 +5,54 @@
 #include <Tempest/Fence>
 #include <Tempest/SystemApi>
 #include "gapi/vulkaninterop.h"
+#if defined(__ANDROID__)
 #include <jni.h>
 #define XR_USE_PLATFORM_ANDROID
+#elif defined(_WIN32)
+// hello_xr's pattern: the XR_USE_PLATFORM_WIN32 blocks need the Windows base types.
+#if !defined(NOMINMAX)
+#define NOMINMAX
+#endif
+#if !defined(WIN32_LEAN_AND_MEAN)
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <unknwn.h>
+// windows.h leaks object-like macros whose names are also enumerators and
+// constants in ZenKit's public headers, which every VR translation unit reaches
+// through gothic.h: ERROR (wingdi.h; zenkit::LogLevel, game/main.cpp),
+// VOID (winnt.h) and CONST (minwindef.h) (zenkit::DaedalusDataType and
+// DaedalusScript), TRANSPARENT/OPAQUE (wingdi.h; zenkit::MenuItemFlag) and
+// small (rpcndr.h, via <unknwn.h>). OpenGothic uses none of the Windows ones,
+// and no Windows header is included past this point. #undef of an undefined
+// macro is a no-op, so no defined() guard is needed.
+#undef ERROR
+#undef VOID
+#undef CONST
+#undef TRANSPARENT
+#undef OPAQUE
+#undef small
+#define XR_USE_PLATFORM_WIN32
+#endif
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
+// <openxr/openxr_platform.h> declares XR_KHR_android_thread_settings only for
+// XR_USE_PLATFORM_ANDROID. Desktop runtimes never list that extension, so the
+// optional probe in questxr.cpp leaves setThread null and the call site is
+// inert; these declarations exist only so it still compiles.
+#if !defined(XR_KHR_android_thread_settings)
+#define XR_KHR_android_thread_settings 1
+#define XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME "XR_KHR_android_thread_settings"
+typedef enum XrAndroidThreadTypeKHR {
+  XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR=1,
+  XR_ANDROID_THREAD_TYPE_APPLICATION_WORKER_KHR=2,
+  XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR=3,
+  XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR=4,
+  XR_ANDROID_THREAD_TYPE_MAX_ENUM_KHR=0x7FFFFFFF
+  } XrAndroidThreadTypeKHR;
+typedef XrResult (XRAPI_PTR *PFN_xrSetAndroidApplicationThreadKHR)(XrSession session,XrAndroidThreadTypeKHR threadType,uint32_t threadId);
+#endif
 #include "xrmath.h"
 #include "vrroomscale.h"
 #include "vrprofiler.h"
@@ -81,6 +124,12 @@ class QuestXr final {
     int cpuPerformanceLevel() const { return perfCpu; }
     int gpuPerformanceLevel() const { return perfGpu; }
     Tempest::GamepadState gamepad() const { return pad; }
+    // Bumped whenever the runtime reports a new interaction profile, so the button
+    // map can be re-derived for the device that is actually in the player's hands.
+    uint32_t profileGeneration() const { return profileChanges; }
+    // The active controller has neither face buttons nor a stick click (Vive wand,
+    // khr/simple_controller): the Touch-shaped default map needs a reduced fallback.
+    bool reducedButtons() const { return reducedButtonSet; }
     float headYawDegrees() const;
     uint32_t width() const { return extent.width; }
     uint32_t height() const { return extent.height; }
@@ -98,6 +147,7 @@ class QuestXr final {
     void createActions();
     void createSwapchains(Tempest::Device& device);
     void updateInput();
+    void reportInteractionProfiles() noexcept;
     void reportVisibilityMasks(bool finalAttempt=false) noexcept;
     void retryVisibilityMasks() noexcept;
     XrPath path(const char* name);
@@ -146,6 +196,15 @@ class QuestXr final {
       double copyGpu=-1; // GPU ms of the last completed copy, -1 unknown
     };
     Swapchain eyes[3]; // left, right, shared transparent HUD/menu overlay
+    // Negotiated by selectSwapchainFormat() against xrEnumerateSwapchainFormats.
+    // colorView is the format the mutable-format eye view is created with, or
+    // VK_FORMAT_UNDEFINED when the choice cannot produce the RGBA8_UNORM view
+    // Tempest::VulkanApi::borrowColorAttachment demands: direct output is then
+    // impossible and every eye takes the copy route.
+    VkFormat colorFormat=VK_FORMAT_R8G8B8A8_SRGB,colorView=VK_FORMAT_R8G8B8A8_UNORM;
+    const char* colorFormatName="R8G8B8A8_SRGB";
+    bool colorSwapsRedBlue=false; // chosen format is BGRA: the texel copy exchanges R and B
+    void selectSwapchainFormat(const std::vector<int64_t>& formats);
     bool directOutputRequested=true,formatListAvailable=false;
     bool hudRectCopy=true,copyTimestamps=false;
     float timestampPeriod=0;   // ns per tick of the graphics queue, 0 = no timestamps
@@ -156,7 +215,12 @@ class QuestXr final {
     VkCommandPool copyPool=VK_NULL_HANDLE;
     XrActionSet actions=XR_NULL_HANDLE;
     XrPath hands[2]={};
-    XrAction stick=XR_NULL_HANDLE,trigger=XR_NULL_HANDLE,grip=XR_NULL_HANDLE;
+    // Two independent per-hand actions rather than one action disambiguated by
+    // subactionPath: some desktop OpenXR runtimes (observed via Steam Link) do not
+    // cleanly separate a single shared VECTOR2F action's two subaction paths, so a
+    // stick read for one hand can pick up the other hand's data. A dedicated action
+    // per hand removes that disambiguation from the runtime's hands entirely.
+    XrAction stickLeft=XR_NULL_HANDLE,stickRight=XR_NULL_HANDLE,trigger=XR_NULL_HANDLE,grip=XR_NULL_HANDLE;
     XrAction primary=XR_NULL_HANDLE,secondary=XR_NULL_HANDLE,stickClick=XR_NULL_HANDLE;
     XrAction menu=XR_NULL_HANDLE,aim=XR_NULL_HANDLE;
     XrAction gripPoseAction=XR_NULL_HANDLE,hapticAction=XR_NULL_HANDLE;
@@ -175,6 +239,8 @@ class QuestXr final {
     int perfCpu=-1,perfGpu=-1,perfCpuApplied=-1,perfGpuApplied=-1;
     void applyPerformanceLevel();
     PFN_xrSetAndroidApplicationThreadKHR setThread=nullptr;
+    uint32_t profileChanges=0;
+    bool reducedButtonSet=false;
     bool visibilityMaskAvailable=false;
     bool visibilityFovLogged=false;
     struct VisibilityMaskDiagnostic {

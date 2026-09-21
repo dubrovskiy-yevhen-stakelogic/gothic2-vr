@@ -634,7 +634,7 @@ void MainWindow::tickGamepad() {
       vrRunningLogged=int(vrRunning);
       }
   }
-  player.setControllerMovement(move.x,move.y,yaw,false,720.f);
+  player.setControllerMovement(move.x,move.y,yaw,false,options.movementTurnSpeed);
   return;
 #endif
   auto look=options.swapCamera?left:right;

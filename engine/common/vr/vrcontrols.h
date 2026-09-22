@@ -8,13 +8,42 @@
 #include <string>
 #include <span>
 #include <vector>
+#include <filesystem>
 #include "vrinteractionmath.h"
 
 namespace Vr {
+// Where Settings::save() writes and MainWindow reads. The working-directory names
+// are what the Quest has always used and what the host suites compile against;
+// MainWindow points these at Vr::Platform::settingsFile() during startup, because
+// on a desktop the working directory is whatever launched the game rather than the
+// install. Deliberately an indirection instead of including vrassets.h: that header
+// reaches <windows.h> and undefines macros (VOID, CONST, ...) that collide with
+// ZenKit, and mainwindow.h pulls this one in ahead of the Windows headers the
+// engine still needs intact.
+inline std::filesystem::path settingsFile{"VR.ini"};
+inline std::filesystem::path settingsTempFile{"VR.ini.tmp"};
 enum class TurnMode { Snap, Smooth, Physical };
 struct Settings {
   HolsterSettings interaction;
-  std::array<int,6> mapping={1,2,3,4,9,5}; // A, B, X, Y, L3, R3
+  // A, B, X, Y, L3, R3. The shipped default assumes Touch ergonomics: four face
+  // buttons and two stick clicks. Index has all six; WMR loses Y; a Vive wand and
+  // the khr/simple floor have neither face buttons nor a stick, and reach only
+  // A (the right menu button) and the two trackpad clicks, so they fall back to
+  // the three rows that a wand can actually produce.
+  static constexpr std::array<int,6> touchMapping={1,2,3,4,9,5};
+  static constexpr std::array<int,6> wandMapping ={2,0,0,0,9,3};
+  std::array<int,6> mapping=touchMapping;
+  // True only while this session swapped in wandMapping itself. Never read from or
+  // written to VR.ini: it exists so the fallback can be undone when a full
+  // controller comes back, and so it is not persisted over the player's profile.
+  bool reducedMapping=false;
+  // Follow the controller the runtime reports. Only a map that is still exactly the
+  // shipped default is replaced, and only a fallback this session applied is taken
+  // back, so an edited row and a deliberate Quest-side choice are both left alone.
+  void adoptControllerDefaults(bool reduced) {
+    if(reduced) { if(mapping==touchMapping) { mapping=wandMapping; reducedMapping=true; } }
+    else if(reducedMapping) { if(mapping==wandMapping) mapping=touchMapping; reducedMapping=false; }
+  }
   static const char* mappingName(int id) {static const char* names[]={"None","Jump","Interact","Inventory","Journal","Crouch","Lock target","Walk","Draw / stow","Run (hold)"};return names[std::clamp(id,0,9)];}
   TurnMode turn=TurnMode::Snap;
   int snapAngle=30, smoothSpeed=90;
@@ -172,7 +201,11 @@ struct Settings {
   void write(std::ostream& f) const {
     const auto& d=interaction.meleeDefault;f<<"CalibrationMirrorVersion=1\nDefaultMeleeGrip="<<d.offset.x<<' '<<d.offset.y<<' '<<d.offset.z<<' '<<d.rotation.x<<' '<<d.rotation.y<<' '<<d.rotation.z<<' '<<d.grip<<' '<<d.scale<<'\n';
     f<<"ButtonLayoutVersion=2\n";
-    for(size_t i=0;i<mapping.size();++i)f<<"ButtonMap"<<i<<'='<<mapping[i]<<'\n';
+    // An untouched wand fallback is a property of the controller, not of the
+    // profile: persist the map it replaced, so a wand session does not rewrite the
+    // button layout a Touch session will read back. An edited row is still saved.
+    const auto& persisted=(reducedMapping && mapping==wandMapping)?touchMapping:mapping;
+    for(size_t i=0;i<persisted.size();++i)f<<"ButtonMap"<<i<<'='<<persisted[i]<<'\n';
     for(const auto& [id,c]:interaction.calibration) f<<"ItemCal_"<<id<<'='<<c.offset.x<<' '<<c.offset.y<<' '<<c.offset.z<<' '<<c.rotation.x<<' '<<c.rotation.y<<' '<<c.rotation.z<<' '<<c.grip<<' '<<c.scale<<' '<<c.stringHeight<<' '<<c.stringCenter<<' '<<c.stringSide<<' '<<c.stringDepth<<'\n';
     f<<"[Interaction]\nHolsterLayoutVersion=1\nHolsters="<<interaction.enabled<<"\nVRHands="<<interaction.showHands<<"\nHolsterModels="<<interaction.showHolsters
      <<"\nIgnoreWeaponRequirements="<<interaction.ignoreWeaponRequirements<<"\nBowSight="<<interaction.bowSight<<"\nPickupHighlightRange="<<interaction.pickupHighlightRange<<"\nPickupHighlight="<<interaction.pickupHighlight<<"\nGripLock="<<interaction.gripLock<<"\nPhysicalCombat="<<interaction.physicalCombat<<"\nHolsterRadius="<<interaction.radius<<"\nPickupRadius="<<interaction.pickupRadius<<"\nSwingSpeed="<<interaction.swingSpeed<<'\n';
@@ -194,8 +227,15 @@ struct Settings {
      <<"\nRoomScale="<<roomScale<<"\nHeadMovement="<<headMovement<<"\nProfiler="<<profiler<<"\nProfilerView="<<profilerView<<"\nHidePlayer="<<hidePlayer<<'\n';
   }
   bool save() const {
-    { std::ofstream f("VR.ini.tmp",std::ios::trunc); write(f); f.flush(); if(!f) return false; }
-    return std::rename("VR.ini.tmp","VR.ini")==0;
+    { std::ofstream f(settingsTempFile,std::ios::trunc); write(f); f.flush(); if(!f) return false; }
+#if defined(_WIN32)
+    // Not std::rename: the Windows CRT refuses to rename onto a file that already
+    // exists, so every save after the first would fail and report the settings as
+    // unsaved while quietly leaving the previous VR.ini in place.
+    std::error_code error; std::filesystem::rename(settingsTempFile,settingsFile,error); return !error;
+#else
+    return std::rename(settingsTempFile.c_str(),settingsFile.c_str())==0;
+#endif
   }
 };
 struct Input {

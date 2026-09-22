@@ -92,6 +92,9 @@ CommandLine::CommandLine(int argc, const char** argv) {
     else if(arg=="-baseline-smoke") {
       smoke = true;
       }
+    else if(arg=="-vrinfo") {
+      // handled by VrInfo::preflight before startup; listed here so it is not reported as unknown
+      }
     else if(arg=="-baseline-gameplay") {
       if(++i>=argc) throw std::invalid_argument("-baseline-gameplay requires a saved fixture");
       smoke = true;
@@ -123,7 +126,17 @@ CommandLine::CommandLine(int argc, const char** argv) {
       forceG2NR = true;
       }
     else if(arg=="-dx12") {
+#if defined(GOTHIC2VR_OPENXR)
+      // The OpenXR runtime owns device creation: vr/questxr.cpp installs
+      // Tempest::vulkanCreateHooks before mkApi() and the instance and device
+      // are then made by xrCreateVulkanInstanceKHR/xrCreateVulkanDeviceKHR.
+      // A DirectX 12 backend would create its own device and never reach the
+      // headset, so reject the flag rather than ignore it.
+      Log::e("-dx12 is not available in the VR build: the OpenXR runtime creates the Vulkan instance and device");
+      throw std::invalid_argument("-dx12 is not available in the VR build: the OpenXR runtime creates the Vulkan instance and device");
+#else
       graphics = GraphicBackend::DirectX12;
+#endif
       }
     else if(arg=="-validation" || arg=="-v") {
       isDebug  = true;

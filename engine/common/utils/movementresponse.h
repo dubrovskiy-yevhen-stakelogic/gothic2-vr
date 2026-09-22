@@ -16,6 +16,13 @@ inline float turn(float delta, float magnitude, float speed, float boost, float 
   // Boost deliberate corners, then ease back to the base rate near the requested heading.
   // Angles are in degrees and dt is in seconds.
   delta=std::remainder(delta,360.f);
+  // The requested heading tracks a live source (in VR, the HMD's own yaw), which
+  // never sits perfectly still. Without a deadband every frame's sub-degree sensor
+  // noise reads as "not yet facing the target" and nudges the body forever, so
+  // walking a straight line never actually settles. 2 degrees is well under a
+  // deliberate head turn and comfortably covers tracking jitter.
+  constexpr float deadband=2.f;
+  if(std::abs(delta)<=deadband) return 0.f;
   const float strength=std::clamp(magnitude,0.f,1.f);
   const float corner=std::min(std::abs(delta)/90.f,1.f);
   const float step=std::max(speed,0.f)*strength*(1.f+std::max(boost,0.f)*strength*corner)*std::max(dt,0.f);

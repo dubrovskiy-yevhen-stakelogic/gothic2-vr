@@ -54,6 +54,24 @@
 #include "utils/gamepadbindings.h"
 #include "resources.h"
 
+// A desktop swapchain to present into. Tempest::Swapchain has no default
+// constructor, so the member may only exist where one can actually be created:
+// every non-VR build, and the Windows VR build, whose mirror window shows eye 0.
+// The Quest has no desktop window at all and leaves the member out entirely.
+#if !defined(GOTHIC2VR_OPENXR) || defined(_WIN32)
+#define GOTHIC2VR_MIRROR 1
+#endif
+
+// The controller bridge (gamepad.cpp) — button/axis state, the binding table, the
+// VR settings menu tick, snap turning and VR locomotion. It was written for the
+// Quest and guarded on __ANDROID__, which leaves the Windows VR build with no
+// input at all: MainWindow::tickGamepad is the only caller of tickVrMenu and the
+// only producer of movement from QuestXr::gamepad(). VR needs it on every
+// platform; a flat desktop build keeps mouse and keyboard and stays out.
+#if defined(__ANDROID__) || defined(GOTHIC2VR_OPENXR)
+#define GOTHIC2VR_CONTROLLER 1
+#endif
+
 class MenuRoot;
 class GameSession;
 class Interactive;
@@ -129,6 +147,13 @@ class MainWindow : public Tempest::Window {
     bool tickVrMenu(const Tempest::GamepadState& pad,uint64_t now);
     void paintVrOverlay(Tempest::PaintEvent& event,bool world);
     void moveRoomScale(Camera& camera,bool allowed);
+#if defined(GOTHIC2VR_MIRROR)
+    // Desktop mirror: drawVrMirror() records eye 0 into the swapchain image
+    // while vrOutput still holds it, presentVrMirror() presents at frame end.
+    bool vrMirrorEnabled();
+    void drawVrMirror();
+    void presentVrMirror();
+#endif
 #endif
 
     uint64_t tick();
@@ -148,6 +173,9 @@ class MainWindow : public Tempest::Window {
       };
 
     Tempest::Device&      device;
+#if defined(GOTHIC2VR_MIRROR)
+    Tempest::Swapchain    swapchain;
+#endif
 #if defined(GOTHIC2VR_OPENXR)
     Tempest::Attachment   vrOutput;
     Tempest::CommandBuffer vrHudCommand;
@@ -176,9 +204,14 @@ class MainWindow : public Tempest::Window {
     float                 vrCrouchOffset=0;
     bool                  vrRunning=false;
     int                   vrRunningLogged=-1;
+    uint32_t              vrProfileGeneration=0;
     bool                  vrSaveFailed=false;
-#else
-    Tempest::Swapchain    swapchain;
+#if defined(GOTHIC2VR_MIRROR)
+    Tempest::CommandBuffer vrMirrorCommand;
+    Tempest::Fence         vrMirrorFence;
+    uint64_t               vrMirrorPresented=0; // tickCount of the last mirror present
+    bool                   vrMirrorDrawn=false; // this frame recorded a mirror image
+#endif
 #endif
     bool                 hdrRequested = false;
     Tempest::TextureAtlas atlas;
@@ -228,7 +261,7 @@ class MainWindow : public Tempest::Window {
     Tempest::Widget*          uiKeyUp=nullptr;
     Tempest::Point            dMouse;
     PlayerControl             player;
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
     Tempest::Timer            controllerTimer;
     GamepadBindings           controllerBindings;
     bool                      controllerConnected=false;

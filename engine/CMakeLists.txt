@@ -21,6 +21,18 @@ if(ANDROID AND CMAKE_BUILD_TYPE STREQUAL "Release")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -g")
 endif()
 
+# the spacer world editor is not part of this source kit
+option(OPENGOTHIC_BUILD_SPACER "build the Spacer world editor" OFF)
+# the Windows OpenXR target needs a bootstrapped loader; a plain desktop build does not
+option(GOTHIC2VR_BUILD_PCVR "build the Windows OpenXR (PCVR) target" OFF)
+if(OPENGOTHIC_BUILD_SPACER AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/spacer")
+  message(FATAL_ERROR
+    "OPENGOTHIC_BUILD_SPACER is ON, but engine/spacer does not exist. "
+    "The Spacer editor sources are not shipped in this source kit; restore them "
+    "from upstream OpenGothic (https://github.com/Try/OpenGothic) or configure "
+    "with -DOPENGOTHIC_BUILD_SPACER=OFF.")
+endif()
+
 add_library(${PROJECT_NAME} STATIC)
 if(ANDROID)
   add_library(Gothic2Notr SHARED)
@@ -37,7 +49,51 @@ if(ANDROID)
   target_link_options(Gothic2Notr PRIVATE "$<$<CONFIG:Release>:-Wl,--thinlto-jobs=4>")
 else()
   add_executable(Gothic2Notr)
-  add_executable(Spacer)
+  if(OPENGOTHIC_BUILD_SPACER)
+    add_executable(Spacer)
+  endif()
+  if(WIN32 AND GOTHIC2VR_BUILD_PCVR)
+    # PCVR. The loader is pinned by config/openxr-sdk-windows.lock.json and unpacked by
+    # tools/prepare-openxr.ps1 -Windows (tools/bootstrap-dependencies.py --component openxr-windows).
+    set(GOTHIC2VR_XR_SDK_WIN "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/openxr-1.1.43-win")
+    if(NOT EXISTS "${GOTHIC2VR_XR_SDK_WIN}/x64/lib/openxr_loader.lib")
+      message(FATAL_ERROR
+        "GOTHIC2VR_BUILD_PCVR is ON, but the pinned Windows OpenXR loader is missing from "
+        "${GOTHIC2VR_XR_SDK_WIN}. Run tools/prepare-openxr.ps1 -Windows (or "
+        "python tools/bootstrap-dependencies.py --component openxr-windows), or configure "
+        "with -DGOTHIC2VR_BUILD_PCVR=OFF for a flat desktop build.")
+    endif()
+    if(NOT DEFINED ENV{VULKAN_SDK})
+      message(FATAL_ERROR
+        "GOTHIC2VR_BUILD_PCVR is ON, but VULKAN_SDK is not set. vr/questxr.cpp calls Vulkan "
+        "directly; install the Vulkan SDK and re-run CMake from a shell where VULKAN_SDK is set.")
+    endif()
+    add_library(openxr_loader SHARED IMPORTED)
+    set_target_properties(openxr_loader PROPERTIES
+      IMPORTED_LOCATION "${GOTHIC2VR_XR_SDK_WIN}/x64/bin/openxr_loader.dll"
+      IMPORTED_IMPLIB   "${GOTHIC2VR_XR_SDK_WIN}/x64/lib/openxr_loader.lib"
+      INTERFACE_INCLUDE_DIRECTORIES "${GOTHIC2VR_XR_SDK_WIN}/include")
+    target_compile_definitions(OpenGothic PUBLIC GOTHIC2VR_OPENXR=1)
+    # vr/questxr.h includes "gapi/vulkaninterop.h", and Tempest keeps the Vulkan SDK
+    # include directory PRIVATE, so both have to be repeated here.
+    target_include_directories(OpenGothic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/Tempest/Engine" "$ENV{VULKAN_SDK}/include")
+    target_link_directories(OpenGothic PUBLIC "$ENV{VULKAN_SDK}/lib")
+    target_link_libraries(OpenGothic openxr_loader vulkan-1)
+    add_custom_command(
+        TARGET Gothic2Notr POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${GOTHIC2VR_XR_SDK_WIN}/x64/bin/openxr_loader.dll"
+        "$<TARGET_FILE_DIR:Gothic2Notr>")
+    # vr/vrassets.h reads the hand meshes and their albedo from vrhands/ next to
+    # the executable, never from the working directory. The Quest packages the
+    # same folder into the APK (android/CMakeLists.txt ASSET_DIRS), so copy it
+    # whole: the MIT licence and provenance note ship with the assets there too.
+    add_custom_command(
+        TARGET Gothic2Notr POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/../android/assets/vrhands"
+        "$<TARGET_FILE_DIR:Gothic2Notr>/vrhands")
+  endif()
 endif()
 
 if(MSVC)
@@ -93,7 +149,9 @@ endif()
 
 # sources
 file(GLOB_RECURSE OPENGOTHIC_SOURCES CONFIGURE_DEPENDS "common/*.h" "common/*.cpp")
-file(GLOB_RECURSE SPACER_SOURCES "spacer/*.h" "spacer/*.cpp")
+if(OPENGOTHIC_BUILD_SPACER)
+  file(GLOB_RECURSE SPACER_SOURCES "spacer/*.h" "spacer/*.cpp")
+endif()
 
 target_sources(${PROJECT_NAME} PRIVATE ${OPENGOTHIC_SOURCES} ${ObjCSOURCES})
 
@@ -102,7 +160,7 @@ add_subdirectory(shader)
 target_link_libraries(${PROJECT_NAME} GothicShaders)
 
 # editor icons and such
-if(NOT ANDROID)
+if(NOT ANDROID AND OPENGOTHIC_BUILD_SPACER)
   add_subdirectory(spacer/assets)
 endif()
 
@@ -200,8 +258,8 @@ endif()
 include_directories(lib/bullet3/src)
 target_link_libraries(${PROJECT_NAME} BulletDynamics BulletCollision LinearMath)
 
-# script for launching in binary directory
-if(WIN32)
+# script for launching in binary directory; absent in this source kit
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/scripts/Gothic2Notr.bat")
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
@@ -230,7 +288,7 @@ if(IOS)
 endif()
 
 target_sources(Gothic2Notr PRIVATE game/main.cpp)
-if(WIN32)
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/icon.rc")
   target_sources(Gothic2Notr PRIVATE icon.rc)
 endif()
 target_link_libraries(Gothic2Notr PRIVATE OpenGothic)
@@ -240,7 +298,7 @@ if(ANDROID)
 endif()
 
 # editor
-if(NOT ANDROID)
+if(NOT ANDROID AND OPENGOTHIC_BUILD_SPACER)
   target_sources(Spacer PRIVATE ${SPACER_SOURCES} spacer/main.cpp)
   target_include_directories(Spacer PRIVATE "spacer")
   target_link_libraries(Spacer PRIVATE OpenGothic SpacerAssets)

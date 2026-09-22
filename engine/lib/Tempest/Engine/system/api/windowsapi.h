@@ -5,6 +5,12 @@
 namespace Tempest {
 
 class WindowsApi final : SystemApi {
+  public:
+    /// A VR session owns the render loop: keep dispatching render while the
+    /// window is iconic, so minimizing the desktop mirror cannot stall the
+    /// headset. Mirrors AndroidApi::setVrRenderLoop.
+    static void setVrRenderLoop(bool enabled);
+
   private:
     WindowsApi();
 

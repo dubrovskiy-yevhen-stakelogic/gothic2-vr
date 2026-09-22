@@ -28,6 +28,7 @@
 #include "commandline.h"
 #include "gothic.h"
 #include "vr/questxr.h"
+#include "vr/vrassets.h"
 #include "vr/vrdefaults.h"
 #include <sstream>
 #include <filesystem>
@@ -39,7 +40,7 @@ using namespace Tempest;
 
 MainWindow::MainWindow(Device& device)
   : Window(Maximized),device(device),
-#if !defined(GOTHIC2VR_OPENXR)
+#if defined(GOTHIC2VR_MIRROR)
     swapchain(device,hwnd()),
 #endif
     atlas(device),rootMenu(keycodec),inventory(keycodec),
@@ -72,24 +73,40 @@ MainWindow::MainWindow(Device& device)
     setWindowTitle("Gothic II"); else
     setWindowTitle("Gothic");
 
+#if defined(GOTHIC2VR_OPENXR)
+  // The headset owns the image; the desktop window is only a mirror, and a
+  // fullscreen mirror would cover the screen for no benefit and fight alt-tab.
+#else
   if(!CommandLine::inst().isWindowMode())
     setFullscreen(true);
+#endif
 
   //renderer.resetSwapchain();
   setupUi();
 #if defined(GOTHIC2VR_OPENXR)
   auto& xr=QuestXr::inst();
-  std::ifstream vrSettings("VR.ini");
+  // Next to the executable on Windows, the working directory on the Quest. Logged
+  // because on a desktop the two can differ and a player needs to know which file
+  // their settings are actually in; the writer follows the same pair.
+  Vr::settingsFile=Vr::Platform::settingsFile();
+  Vr::settingsTempFile=Vr::Platform::settingsTempFile();
+  const auto vrSettingsFile=Vr::settingsFile.string();
+  std::ifstream vrSettings(Vr::settingsFile);
   if(vrSettings) {
     vrMenu.settings.read(vrSettings);
+    Log::i("VR settings loaded from ",vrSettingsFile.c_str());
     } else {
     std::istringstream defaults(Vr::ReleaseDefaults);
     vrMenu.settings.read(defaults);
+    Log::i("VR settings: release defaults; ",vrSettingsFile.c_str()," will be written on the first change");
     }
   Widget::resize(int(xr.width()),int(xr.height()));
   vrOutput=device.attachment(TextureFormat::RGBA8,xr.width(),xr.height());
   xr.invalidateCopyCache();
+#if defined(__MOBILE_PLATFORM__)
+  // The touch overlay exists only on mobile; PCVR has no TouchInput member.
   mobileUi.setTouchEnabled(false);
+#endif
 #endif
 
   barBack    = Resources::loadTexture("BAR_BACK.TGA");
@@ -152,7 +169,7 @@ MainWindow::MainWindow(Device& device)
 
   displayPos = Shortcut(*this,Event::M_Alt,Event::K_P);
   displayPos.onActivated.bind(this, &MainWindow::onMarvinKey<Event::K_P>);
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   // Controller menu actions can open modal dialogs, so dispatch them outside rendering.
   controllerTimer.timeout.bind(this,&MainWindow::tickGamepad);
   controllerTimer.start(1);
@@ -160,7 +177,7 @@ MainWindow::MainWindow(Device& device)
   }
 
 MainWindow::~MainWindow() {
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   controllerTimer.stop();
 #endif
   GameMusic::inst().stopMusic();
@@ -360,8 +377,14 @@ void MainWindow::paintEvent(PaintEvent& event) {
 
 void MainWindow::resizeEvent(SizeEvent&) {
 #if defined(GOTHIC2VR_OPENXR)
+  // The viewport follows the headset, never the desktop window: every render
+  // target is sized from QuestXr. Only the mirror swapchain tracks the window.
   if(auto camera=Gothic::inst().camera())
     camera->setViewport(QuestXr::inst().width(),QuestXr::inst().height());
+#if defined(GOTHIC2VR_MIRROR)
+  device.waitIdle(); // the mirror's previous image and its present are in flight
+  swapchain.reset();
+#endif
 #else
 #if defined(__ANDROID__)
   framePacer.reset();

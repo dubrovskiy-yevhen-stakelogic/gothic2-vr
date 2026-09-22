@@ -1,0 +1,31 @@
+{
+  "version": "1.1.43",
+  "source": "KhronosGroup/OpenXR-SDK-Source release-1.1.43 (openxr_loader_windows-1.1.43.zip)",
+  "source_url": "https://github.com/KhronosGroup/OpenXR-SDK-Source/releases/download/release-1.1.43/openxr_loader_windows-1.1.43.zip",
+  "archive_sha256": "5402dfc8cf47d109871db3e9a44c753511c432a7b1645183b28d0173279fef51",
+  "sha256_note": "Left empty on purpose: the source kit was authored offline and no hash may be invented. Run tools/prepare-openxr.ps1 -Windows -RecordHashes (or python tools/bootstrap-dependencies.py --component openxr-windows --record-hashes) once, online, to record archive_sha256 and every files[].sha256 from the first fetch; compare them against the Khronos release page, then commit this file. Until every value here is a 64 character hex digest the bootstrap refuses to run rather than skip verification.",
+  "install_directory": "toolchain/openxr-1.1.43-win",
+  "layout_note": "The release archive's internal directory names are not pinned here. The bootstrap locates include/openxr/openxr.h, the x64 openxr_loader.lib and the x64 openxr_loader.dll inside the extracted archive and installs them into install_directory under the fixed layout below, which is what engine/CMakeLists.txt expects.",
+  "files": [
+    {
+      "path": "toolchain/openxr-1.1.43-win/include/openxr/openxr.h",
+      "sha256": "102552dd30e459cc09a01d497cf6961a6e758892731881f363bef9a24ab3f8d5"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43-win/include/openxr/openxr_platform.h",
+      "sha256": "83132da278b9517c79cb3e2d1a119895f3d9c2f06a031e791639f96235643505"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43-win/include/openxr/openxr_platform_defines.h",
+      "sha256": "d9cb4c72dc145dd2403ad14cc0c212a0a1f8f057c20d4135b33b54e726b621ef"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43-win/x64/lib/openxr_loader.lib",
+      "sha256": "1d9e640bfdf13f867bcbf235d21e5f0120710771ee7e72ad0bb50a117687187d"
+    },
+    {
+      "path": "toolchain/openxr-1.1.43-win/x64/bin/openxr_loader.dll",
+      "sha256": "2ad93d0206f5519f871702ed47d940e0ff2e37604c3c5718d28f5120243ec929"
+    }
+  ]
+}

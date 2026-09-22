@@ -13,7 +13,14 @@ struct VulkanCreateHooks {
   VkPhysicalDevice (*physicalDevice)(void*,VkInstance)=nullptr;
   VkResult (*createDevice)(void*,VkPhysicalDevice,const VkDeviceCreateInfo*,VkDevice*)=nullptr;
   };
-inline VulkanCreateHooks vulkanCreateHooks;
+// The application and Tempest must see the same hooks. An inline variable is
+// merged across shared objects by the ELF dynamic linker, but a Windows DLL
+// and the executable that links it each get their own copy, so hooks installed
+// by the application would never reach the Vulkan backend inside Tempest.dll:
+// the backend would create its own VkInstance/VkDevice, and a runtime such as
+// SteamVR then rejects xrCreateSession because xrGetVulkanGraphicsDevice was
+// never called. The accessor is defined once, in gapi/vulkanapi.cpp.
+VulkanCreateHooks& vulkanCreateHooks();
 
 struct VulkanNativeContext {
   VkInstance instance=VK_NULL_HANDLE;

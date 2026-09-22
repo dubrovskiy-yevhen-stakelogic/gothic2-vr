@@ -154,15 +154,114 @@ def prepare_openxr(verify_only):
     print('Verified pinned OpenXR loader and headers.')
 
 
+def install_openxr_windows(extracted, destination, verify_only):
+    """Normalise the release archive into the layout engine/CMakeLists.txt expects."""
+    if destination.exists():
+        return
+    if verify_only:
+        raise ValueError(f'Missing extracted dependency: {destination}')
+
+    def x64(path):
+        return any(part.casefold() == 'x64' for part in path.parts)
+
+    headers = next((path.parent for path in sorted(extracted.rglob('openxr/openxr.h'))), None)
+    library = next((path for path in sorted(extracted.rglob('openxr_loader.lib')) if x64(path)), None)
+    runtime = next((path for path in sorted(extracted.rglob('openxr_loader.dll')) if x64(path)), None)
+    if headers is None or library is None or runtime is None:
+        raise ValueError(f'Unexpected OpenXR Windows archive layout under {extracted}')
+    staging = destination.with_name(destination.name + '.installing')
+    if staging.exists():
+        raise ValueError(f'Previous installation preserved: {staging}. Inspect and remove it before retrying.')
+    shutil.copytree(headers, staging / 'include/openxr')
+    (staging / 'x64/lib').mkdir(parents=True, exist_ok=True)
+    shutil.copy2(library, staging / 'x64/lib/openxr_loader.lib')
+    (staging / 'x64/bin').mkdir(parents=True, exist_ok=True)
+    shutil.copy2(runtime, staging / 'x64/bin/openxr_loader.dll')
+    staging.rename(destination)
+
+
+def record_openxr_windows(lock, lock_path, archive, extracted, destination):
+    """Trust-on-first-use: fetch once unverified, then pin what was actually received."""
+    url = lock['source_url']
+    if not url.startswith('https://'):
+        raise ValueError('Invalid dependency URL')
+    print('Recording the Windows OpenXR hashes from one unverified fetch of')
+    print(f'  {url}')
+    print('Compare the recorded digests with the Khronos release page before committing the lock file.')
+    if not archive.exists():
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        partial = archive.with_name(archive.name + '.partial')
+        if partial.exists():
+            raise ValueError(f'Previous partial download preserved: {partial}. Inspect and remove it before retrying.')
+        opener = urllib.request.build_opener(HttpsRedirectHandler(), urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+        request = urllib.request.Request(url, headers={'User-Agent': 'Gothic2VR-source-kit/1'})
+        print(f'Downloading {archive.name}...', flush=True)
+        with opener.open(request, timeout=60) as response, partial.open('xb') as output:
+            shutil.copyfileobj(response, output)
+        partial.rename(archive)
+    extract(archive, extracted, False)
+    install_openxr_windows(extracted, destination, False)
+    lock['archive_sha256'] = digest(archive)
+    for entry in lock['files']:
+        path = child(ROOT, entry['path'])
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f'Missing dependency file: {path}')
+        entry['sha256'] = digest(path)
+    lock_path.write_text(json.dumps(lock, indent=2) + '\n', encoding='utf-8')
+    print(f'Recorded sha256 values into config/{lock_path.name}. Review and commit it.')
+
+
+def prepare_openxr_windows(verify_only, record):
+    lock_path = ROOT / 'config/openxr-sdk-windows.lock.json'
+    lock = json.loads(lock_path.read_text(encoding='utf-8-sig'))
+    version = lock['version']
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+        raise ValueError('Invalid OpenXR version')
+    archive = ROOT / f'toolchain/dependencies/openxr-{version}-win.zip'
+    extracted = ROOT / f'toolchain/dependencies/openxr-{version}-win'
+    destination = ROOT / f'toolchain/openxr-{version}-win'
+    if lock['install_directory'] != f'toolchain/openxr-{version}-win':
+        raise ValueError('OpenXR Windows lock install_directory does not match its version')
+    if record:
+        if verify_only:
+            raise ValueError('--record-hashes cannot be combined with --verify-only')
+        record_openxr_windows(lock, lock_path, archive, extracted, destination)
+        lock = json.loads(lock_path.read_text(encoding='utf-8-sig'))
+    blank = [] if re.fullmatch('[0-9a-fA-F]{64}', lock['archive_sha256']) else ['archive_sha256']
+    blank += [entry['path'] for entry in lock['files'] if not re.fullmatch('[0-9a-fA-F]{64}', entry['sha256'])]
+    if blank:
+        raise ValueError(
+            'config/openxr-sdk-windows.lock.json has no sha256 for: ' + ', '.join(blank) + '. '
+            'It was authored offline, so no digest could be computed. Run this script once with '
+            '--record-hashes (tools/prepare-openxr.ps1 -Windows -RecordHashes) on a machine with '
+            'network access to pin what the Khronos release actually serves, verify the digests '
+            'against the release page, and commit the lock file. Verification is never skipped.')
+    download(lock['source_url'], archive, lock['archive_sha256'], verify_only)
+    extract(archive, extracted, verify_only)
+    verify_extraction(archive, extracted)
+    install_openxr_windows(extracted, destination, verify_only)
+    for entry in lock['files']:
+        path = child(ROOT, entry['path'])
+        if not path.is_relative_to(destination):
+            raise ValueError('OpenXR lock file path escapes its dependency directory')
+        checked_file(path, entry['sha256'])
+    print('Verified pinned Windows OpenXR loader and headers.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--component', choices=('vulkan', 'openxr', 'all'), default='all')
+    # 'all' stays Android-only: the Windows loader is opt-in so the APK build is unaffected.
+    parser.add_argument('--component', choices=('vulkan', 'openxr', 'openxr-windows', 'all'), default='all')
     parser.add_argument('--verify-only', action='store_true')
+    parser.add_argument('--record-hashes', action='store_true',
+                        help='openxr-windows only: pin the digests of one unverified first fetch')
     args = parser.parse_args()
     if args.component in ('vulkan', 'all'):
         prepare_vulkan(args.verify_only)
     if args.component in ('openxr', 'all'):
         prepare_openxr(args.verify_only)
+    if args.component == 'openxr-windows':
+        prepare_openxr_windows(args.verify_only, args.record_hashes)
 
 
 if __name__ == '__main__':

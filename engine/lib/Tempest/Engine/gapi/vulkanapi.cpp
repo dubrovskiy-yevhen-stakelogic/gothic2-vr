@@ -26,6 +26,13 @@
 using namespace Tempest;
 using namespace Tempest::Detail;
 
+namespace Tempest {
+VulkanCreateHooks& vulkanCreateHooks() {
+  static VulkanCreateHooks hooks;
+  return hooks;
+  }
+}
+
 #define VK_KHR_WIN32_SURFACE_EXTENSION_NAME   "VK_KHR_win32_surface"
 #define VK_KHR_XLIB_SURFACE_EXTENSION_NAME    "VK_KHR_xlib_surface"
 #define VK_KHR_ANDROID_SURFACE_EXTENSION_NAME "VK_KHR_android_surface"
@@ -118,7 +125,7 @@ struct Tempest::VulkanApi::Impl {
       appInfo.apiVersion = VK_API_VERSION_1_3;
       }
 
-    appInfo.apiVersion=std::min(appInfo.apiVersion,vulkanCreateHooks.maxApiVersion);
+    appInfo.apiVersion=std::min(appInfo.apiVersion,vulkanCreateHooks().maxApiVersion);
     instanceApiVersion=appInfo.apiVersion;
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -150,8 +157,8 @@ struct Tempest::VulkanApi::Impl {
       createInfo.enabledLayerCount   = 0;
       }
 
-    VkResult ret = vulkanCreateHooks.createInstance ?
-        vulkanCreateHooks.createInstance(vulkanCreateHooks.context,&createInfo,&instance) :
+    VkResult ret = vulkanCreateHooks().createInstance ?
+        vulkanCreateHooks().createInstance(vulkanCreateHooks().context,&createInfo,&instance) :
         vkCreateInstance(&createInfo,nullptr,&instance);
     if(ret!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::NoDevice);
@@ -234,8 +241,8 @@ std::vector<AbstractGraphicsApi::Props> VulkanApi::devices() const {
   vkEnumeratePhysicalDevices(impl->instance, &deviceCount, devices.data());
 
   devList.reserve(devices.size());
-  const auto required=vulkanCreateHooks.physicalDevice ?
-      vulkanCreateHooks.physicalDevice(vulkanCreateHooks.context,impl->instance) : VK_NULL_HANDLE;
+  const auto required=vulkanCreateHooks().physicalDevice ?
+      vulkanCreateHooks().physicalDevice(vulkanCreateHooks().context,impl->instance) : VK_NULL_HANDLE;
   for(auto device : devices) {
     if(required!=VK_NULL_HANDLE && device!=required) continue;
     VDevice::VkProps props = {};
@@ -258,8 +265,8 @@ AbstractGraphicsApi::Device* VulkanApi::createDevice(std::string_view gpuName) {
   std::vector<VkPhysicalDevice> devices(deviceCount);
   vkEnumeratePhysicalDevices(impl->instance, &deviceCount, devices.data());
 
-  const auto required=vulkanCreateHooks.physicalDevice ?
-      vulkanCreateHooks.physicalDevice(vulkanCreateHooks.context,impl->instance) : VK_NULL_HANDLE;
+  const auto required=vulkanCreateHooks().physicalDevice ?
+      vulkanCreateHooks().physicalDevice(vulkanCreateHooks().context,impl->instance) : VK_NULL_HANDLE;
   for(const auto& device:devices) {
     if(required!=VK_NULL_HANDLE && device!=required) continue;
     VDevice::VkProps props = {};

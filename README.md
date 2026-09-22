@@ -4,6 +4,8 @@
 
 Gothic II: Night of the Raven on standalone **Meta Quest 3**, with tracked hands, physical combat and a stereoscopic world. A Windows PC is used for installation; the game itself runs on the headset.
 
+A second target, **Windows PCVR**, builds the same VR layer against a desktop OpenXR runtime. It is a bring-up target, not a release: see [Windows PCVR](#windows-pcvr) below.
+
 **This is a very early alpha. The game is not yet ready for a complete playthrough. Many interactions and original game features are unfinished or may fail.** Keep several save slots.
 
 ## VR features
@@ -35,6 +37,14 @@ Download the **Gothic-II-VR-0.1.1-Alpha-Quest.zip** player package, extract it, 
 This source kit contains no APK, purchased game data, saves, toolchains or signing keys. To build your own APK, run **BUILD-APK.bat**; dependencies download automatically. Then use **INSTALL.bat** from this folder.
 
 New players start with the release's tuned weapon calibrations, holster positions and VR settings. Existing `VR.ini` profiles are preserved. The welcome panel appears on the first movement attempt and stays until a button is pressed; it is shown once per profile.
+
+## Windows PCVR
+
+The engine also builds as a Windows executable that talks to a desktop OpenXR runtime - SteamVR, the Oculus app, Windows Mixed Reality or another - so a PC headset runs the same VR layer as the Quest.
+
+**No headset was available to test it.** It configures, compiles, links, starts and passes the host suites, and its OpenXR, input and rendering paths are reasoned from the code, but nothing has been confirmed in a HMD. Report it as bring-up, not as a playable target.
+
+There is no player package and no installer for it. Build it from this source kit with `-DGOTHIC2VR_BUILD_PCVR=ON` and copy the resulting folder wherever you like; see [BUILDING.md](BUILDING.md) for the toolchain, the shipped files and the command line, and [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what is known to be rough. Bindings are suggested for Touch, Index, Vive wand, Windows Mixed Reality and the OpenXR simple controller. Touch and Index reach every mapped button; the other three do not, and the simple controller has no locomotion at all. Your purchased Gothic II Gold / Night of the Raven installation is used in place, with `-g <GothicIIDir>`; nothing is packaged or copied.
 
 ## Credits and source
 

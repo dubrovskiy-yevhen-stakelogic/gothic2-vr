@@ -18,7 +18,7 @@ using Context=GamepadBindings::Context;
 using Phase=GamepadBindings::Phase;
 
 void MainWindow::updateControllerOverlay() {
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   const auto context=controllerContext();
   const bool enabled=controllerConnected && Gothic::settingsGetI("DEBUG","gamepadControls")!=0 &&
                      !video.isActive() && Gothic::inst().checkLoading()==Gothic::LoadState::Idle;
@@ -67,7 +67,7 @@ void MainWindow::updateControllerOverlay() {
   }
 
 void MainWindow::paintControllerOverlay(PaintEvent& event,int top) {
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   if(controllerOverlayContext<0) return;
   const auto safe=safeArea();
   const int pad=std::max(12,int(16.f*uiScale()));
@@ -150,7 +150,7 @@ Context MainWindow::controllerContext() const {
   const auto ws=pl->weaponState();
   if(ws==WeaponState::Bow || ws==WeaponState::CBow || ws==WeaponState::Mage) return Context::Ranged;
   if(ws==WeaponState::NoWeapon) return Context::Gameplay;
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   if(player.isClassicCombat() && !controllerExploration) return Context::ClassicMelee;
 #endif
   return Context::ModernMelee;
@@ -184,7 +184,7 @@ void MainWindow::controllerUiKey(Event::KeyType key,bool repeat,bool touchNaviga
   }
 
 void MainWindow::controllerAction(const GamepadBindings::Event& event) {
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   const auto action=event.action;
   const bool pressed=event.phase==Phase::Press;
   const bool repeat=event.phase==Phase::Repeat;
@@ -346,13 +346,21 @@ void MainWindow::controllerAction(const GamepadBindings::Event& event) {
   }
 
 void MainWindow::tickGamepad() {
-#if defined(__ANDROID__)
+#if defined(GOTHIC2VR_CONTROLLER)
   const auto now=Application::tickCount();
   const auto dt=std::min<uint64_t>(50,now-controllerLastPoll);
   controllerLastPoll=now;
 #if defined(GOTHIC2VR_OPENXR)
   auto gp=QuestXr::inst().gamepad();
   if(auto pl=Gothic::inst().player())pl->setVrLocomotionSpeed(1.f);
+  // A device the runtime has just bound: Touch, Index and WMR keep the shipped
+  // button map, a wand or the simple-controller floor falls back to the three
+  // rows it can actually reach. An edited map is never overwritten, and the
+  // fallback is not written to VR.ini, so plugging Touch back in restores it.
+  if(const auto generation=QuestXr::inst().profileGeneration(); generation!=vrProfileGeneration) {
+    vrProfileGeneration=generation;
+    vrMenu.settings.adoptControllerDefaults(QuestXr::inst().reducedButtons());
+  }
   const PadAction vrActions[]={PadAction::Count,PadAction::Jump,PadAction::Interact,PadAction::Inventory,PadAction::Journal,PadAction::Sneak,PadAction::LockTarget,PadAction::Walk,PadAction::DrawSheathe,PadAction::Run};
   std::array<PadAction,6> mapped;
   for(size_t i=0;i<mapped.size();++i)mapped[i]=vrActions[size_t(vrMenu.settings.mapping[i])];
@@ -363,7 +371,9 @@ void MainWindow::tickGamepad() {
     vrRunning=false;
     clearInput(); controllerBindings.reset(gp.buttons); controllerButtons=gp.buttons; controllerTriggers=0; controllerAxesBlocked=true;
     vrTurning.update(0,false,vrMenu.settings,0);
+#if defined(__MOBILE_PLATFORM__)
     mobileUi.setTouchEnabled(false);
+#endif
     return;
   }
   if(Gothic::inst().isInGame() && !rootMenu.isActive() && !dialogs.isActive() && !inventory.isActive() && !video.isActive() && !chapter.isActive() && !document.isActive() && !console.isActive()) {
@@ -382,6 +392,9 @@ void MainWindow::tickGamepad() {
   controllerWasPresent = gp.connected && options.enabled;
   const bool connected=gp.connected && options.enabled && controllerFocused;
   Feedback::setGamepad(connected);
+// The touch overlay is a mobile control scheme; PCVR has no TouchInput member
+// (mainwindow.h), so every mobileUi call below belongs to the Quest alone.
+#if defined(__MOBILE_PLATFORM__)
 #if defined(GOTHIC2VR_OPENXR)
   mobileUi.setTouchEnabled(false);
 #else
@@ -411,6 +424,7 @@ void MainWindow::tickGamepad() {
   mobileUi.setSaveDeleteEnabled(rootMenu.canRequestDeleteSave() && !video.isActive() && !chapter.isActive() &&
                                !document.isActive() && !dialogs.isActive() && !inventory.isActive() && !console.isActive());
   mobileUi.tick();
+#endif
   if(!connected && controllerConnected) {
     controllerAxesBlocked=true;
     player.clearInput(); controllerBindings.reset(); controllerButtons=0; controllerTriggers=0;
@@ -419,7 +433,9 @@ void MainWindow::tickGamepad() {
     wheelHeldMask=0;
     }
   controllerConnected=connected;
+#if defined(__MOBILE_PLATFORM__)
   mobileUi.setDebugOverlay(!connected && Gothic::settingsGetI("DEBUG","touchControls")!=0);
+#endif
   updateControllerOverlay();
   if(controllerDisconnectPending && controllerFocused && Gothic::inst().checkLoading()==Gothic::LoadState::Idle) {
     controllerDisconnectPending = false;
@@ -433,6 +449,7 @@ void MainWindow::tickGamepad() {
       }
     }
   auto camera=Gothic::inst().camera();
+#if defined(__MOBILE_PLATFORM__)
   if(!connected) {
     const auto touchMove=mobileUi.movementAxis();
     const auto look=mobileUi.takeLookDelta();
@@ -502,6 +519,7 @@ void MainWindow::tickGamepad() {
       }
     return;
     }
+#endif
   auto trigger=[&](float value,uint32_t bit) {
     if(value>=((controllerTriggers&bit)?options.triggerRelease:options.triggerPress)) controllerTriggers|=bit;
     else controllerTriggers&=~bit;
@@ -616,7 +634,7 @@ void MainWindow::tickGamepad() {
       vrRunningLogged=int(vrRunning);
       }
   }
-  player.setControllerMovement(move.x,move.y,yaw,false,720.f);
+  player.setControllerMovement(move.x,move.y,yaw,false,options.movementTurnSpeed);
   return;
 #endif
   auto look=options.swapCamera?left:right;

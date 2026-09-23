@@ -54,6 +54,7 @@ typedef enum XrAndroidThreadTypeKHR {
 typedef XrResult (XRAPI_PTR *PFN_xrSetAndroidApplicationThreadKHR)(XrSession session,XrAndroidThreadTypeKHR threadType,uint32_t threadId);
 #endif
 #include "xrmath.h"
+#include "vrswimming.h"
 #include "vrroomscale.h"
 #include "vrprofiler.h"
 #include <array>
@@ -72,6 +73,7 @@ class QuestXr final {
     void endFrame(bool world,bool complete,bool overlay=false,float hudDistance=2.f) noexcept;
     // HUD composition layer: only this image rectangle (pixels); zero size = the whole image.
     void setHudRect(int x,int y,int w,int h) { hudRect={x,y,w,h}; }
+    bool stableHudExtent() const { return steamVrStableHud; }
     // The HUD copy (image 2) covers only that rectangle (Gothic.ini [ENGINE] vrHudRectCopyOff=1 restores the full copy).
     void setHudRectCopy(bool enabled) { hudRectCopy=enabled; }
     // World eye rectangle from the image origin that the renderer tonemapped
@@ -131,6 +133,7 @@ class QuestXr final {
     // khr/simple_controller): the Touch-shaped default map needs a reduced fallback.
     bool reducedButtons() const { return reducedButtonSet; }
     float headYawDegrees() const;
+    Vr::SwimInput swimInput(const Tempest::Matrix4x4& base,float playerY,float eyeHeight) const;
     uint32_t width() const { return extent.width; }
     uint32_t height() const { return extent.height; }
     bool focused() const { return state==XR_SESSION_STATE_FOCUSED && trackingValid; }
@@ -203,10 +206,12 @@ class QuestXr final {
     // impossible and every eye takes the copy route.
     VkFormat colorFormat=VK_FORMAT_R8G8B8A8_SRGB,colorView=VK_FORMAT_R8G8B8A8_UNORM;
     const char* colorFormatName="R8G8B8A8_SRGB";
-    bool colorSwapsRedBlue=false; // chosen format is BGRA: the texel copy exchanges R and B
     void selectSwapchainFormat(const std::vector<int64_t>& formats);
     bool directOutputRequested=true,formatListAvailable=false;
     bool hudRectCopy=true,copyTimestamps=false;
+    bool steamVrStableHud=false;
+    const char* frameSkipReason="render incomplete";
+    uint64_t emptyFrameCount=0,emptyFrameStreak=0;
     float timestampPeriod=0;   // ns per tick of the graphics queue, 0 = no timestamps
     uint64_t timestampMask=0;  // valid timestamp bits
     void readCopyGpu(uint32_t index) noexcept;

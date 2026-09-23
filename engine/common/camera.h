@@ -125,6 +125,7 @@ class Camera final {
 
   private:
     bool vrViewActive=false;
+    bool vrInWater=false;
     Tempest::Matrix4x4 vrView,vrProjection;
     Tempest::Vec3 vrOrigin;
     struct Pin {

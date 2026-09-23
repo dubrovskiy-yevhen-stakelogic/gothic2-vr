@@ -1,10 +1,10 @@
-# Gothic II VR 0.1.1 Alpha
+# Gothic II VR 0.2.0
 
-[Install](INSTALL.md) · [Controls](CONTROLS.md) · [Build from source](BUILDING.md) · [Limitations](KNOWN_ISSUES.md)
+[Install](INSTALL.md) | [Controls](CONTROLS.md) | [Changelog](CHANGELOG.md) | [Build from source](BUILDING.md) | [Limitations](KNOWN_ISSUES.md)
 
-Gothic II: Night of the Raven on standalone **Meta Quest 3**, with tracked hands, physical combat and a stereoscopic world. A Windows PC is used for installation; the game itself runs on the headset.
+Gothic II: Night of the Raven in VR on standalone **Meta Quest 3** and **Windows PCVR**, with tracked hands, physical combat and a stereoscopic world. The Quest version runs on the headset; PCVR uses your Windows PC and an OpenXR connection.
 
-A second target, **Windows PCVR**, builds the same VR layer against a desktop OpenXR runtime. It is a bring-up target, not a release: see [Windows PCVR](#windows-pcvr) below.
+The combined **Gothic-II-VR-0.2.0-PCVR-and-Quest.zip** contains separate `PCVR/` and `Quest/` folders. Both share the VR gameplay layer. Oculus/Meta Link is a PCVR connection; standalone Quest uses the APK in `Quest/`.
 
 **This is a very early alpha. The game is not yet ready for a complete playthrough. Many interactions and original game features are unfinished or may fail.** Keep several save slots.
 
@@ -20,7 +20,24 @@ A second target, **Windows PCVR**, builds the same VR layer against a desktop Op
 - Haptics, adjustable running speed, snap/smooth/physical turning, button mapping and saved settings.
 - Adjustable HUD, resolution, draw distance, lighting, terrain detail and an optional profiler.
 
-## Changes in 0.1.1
+## Changes in 0.2.0
+
+- Windows PCVR player package with separate SteamVR, Oculus/Meta Link and Virtual Desktop launchers. Runtime selection applies only to the game process.
+- Fixed continuous camera rotation during head-relative movement on PCVR; desktop flat and Android touch camera behavior are preserved.
+- **Both grips + Y** opens/closes the game menu. **L3 + R3** opens/closes VR settings, including when Steam Link reserves the controller Menu button. Normal Y, L3 and R3 actions remain configurable.
+- Menu shortcuts consume their input and wait for neutral controls before returning to gameplay. Their hints appear in VR settings and the welcome panel.
+- Resizing, maximizing or minimizing the desktop mirror no longer changes the VR UI dimensions. HUD composition is bounded by the headset image.
+- Runtimes must offer the supported RGBA sRGB swapchain format; unsupported formats now produce an explicit error instead of incorrect colours.
+
+- Physical hand-stroke swimming, diving and treading water on Quest and PCVR, with visible hands and a corrected transition to walking on the bank.
+- L3 toggles running; **Locomotion > Run button > Hold** restores hold-to-run.
+- VR settings use the stick only to select rows. Change values with the triggers or A.
+- Fixed outdoor SteamVR flashes caused by object uploads being submitted before the upload worker finished.
+- Fixed an opaque view when entering water by classifying each tracked eye against the water surface.
+
+See [CHANGELOG.md](CHANGELOG.md) for the release notes.
+
+## Earlier changes in 0.1.1
 
 - Multi-second stalls when new scenery first comes into view are reduced: world material shaders are prepared on background threads and cached between sessions. A newly seen object can appear a few frames late instead.
 - Talking to NPCs no longer requires aiming at their waist. Look at any part of the body; the name on the HUD is the character that **B** talks to.
@@ -32,7 +49,7 @@ A second target, **Windows PCVR**, builds the same VR layer against a desktop Op
 
 ## Install
 
-Download the **Gothic-II-VR-0.1.1-Alpha-Quest.zip** player package, extract it, and run **INSTALL.bat**. It downloads its own tools, installs the APK and prepares your purchased Gothic II Gold / Night of the Raven data. See [INSTALL.md](INSTALL.md). No separate Python, Java, Android SDK or SideQuest installation is needed by players.
+Extract **Gothic-II-VR-0.2.0-PCVR-and-Quest.zip**, open its **Quest** folder, and run **INSTALL.bat**. It downloads its own tools, installs the APK and prepares your purchased Gothic II Gold / Night of the Raven data. See [INSTALL.md](INSTALL.md). No separate Python, Java, Android SDK or SideQuest installation is needed by players.
 
 This source kit contains no APK, purchased game data, saves, toolchains or signing keys. To build your own APK, run **BUILD-APK.bat**; dependencies download automatically. Then use **INSTALL.bat** from this folder.
 
@@ -40,18 +57,28 @@ New players start with the release's tuned weapon calibrations, holster position
 
 ## Windows PCVR
 
-The engine also builds as a Windows executable that talks to a desktop OpenXR runtime - SteamVR, the Oculus app, Windows Mixed Reality or another - so a PC headset runs the same VR layer as the Quest.
+Extract **Gothic-II-VR-0.2.0-PCVR-and-Quest.zip** to a writable folder, open **PCVR**, and connect your headset. Start the game with the matching launcher:
 
-**No headset was available to test it.** It configures, compiles, links, starts and passes the host suites, and its OpenXR, input and rendering paths are reasoned from the code, but nothing has been confirmed in a HMD. Report it as bring-up, not as a playable target.
+| Connection | Launcher |
+| --- | --- |
+| SteamVR / Steam Link | `START-STEAMVR.cmd` |
+| Meta Quest Link / Air Link | `START-OCULUS.cmd` |
+| Virtual Desktop with VDXR | `START-VIRTUAL-DESKTOP.cmd` |
 
-There is no player package and no installer for it. Build it from this source kit with `-DGOTHIC2VR_BUILD_PCVR=ON` and copy the resulting folder wherever you like; see [BUILDING.md](BUILDING.md) for the toolchain, the shipped files and the command line, and [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what is known to be rough. Bindings are suggested for Touch, Index, Vive wand, Windows Mixed Reality and the OpenXR simple controller. Touch and Index reach every mapped button; the other three do not, and the simple controller has no locomotion at all. Your purchased Gothic II Gold / Night of the Raven installation is used in place, with `-g <GothicIIDir>`; nothing is packaged or copied.
+The launcher detects a Steam Gothic II installation or asks for the purchased game's root folder containing `Data` and `System`. Keep the release in its own folder. No retail files are included or replaced. Settings and saves are stored in the PCVR folder; see [INSTALL.md](INSTALL.md) for updates and diagnostics.
+
+**Physical swimming:** paddle with either hand along your gaze, scull to stay afloat, and look down/up while stroking to dive/ascend. **L3** toggles running; **Locomotion > Run button > Hold** restores the previous behavior. In VR settings, the stick only selects rows; use LT/RT or A to change values.
+
+**Both grips + Y** opens the game menu; **L3 + R3** opens VR settings. L3/R3 mean pressing the left/right stick inward. These combinations do not require the controller Menu button. Full controls require Touch-compatible buttons or an equivalent mapping; controller limitations are listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+
+Quest swimming, hand visibility, water entry and shore exit were confirmed in headset testing. SteamVR startup, locomotion, physical swimming and the outdoor-flash fix were also confirmed. Oculus/Meta Link and Virtual Desktop gameplay are not yet verified. See [BUILDING.md](BUILDING.md) to build from source.
 
 ## Credits and source
 
-Built on **[OpenGothic by Try and its contributors](https://github.com/Try/OpenGothic)**. Their engine provides world loading, scripting, quests, dialogue, NPCs and core RPG systems. The Android baseline is **[Solessfir's OpenGothic port](https://github.com/Solessfir/OpenGothic)**, with Tempest and other open-source libraries. Our changes add Quest OpenXR support, VR interaction and rendering work.
+Built on **[OpenGothic by Try and its contributors](https://github.com/Try/OpenGothic)**. Their engine provides world loading, scripting, quests, dialogue, NPCs and core RPG systems. The Android baseline is **[Solessfir's OpenGothic port](https://github.com/Solessfir/OpenGothic)**, with Tempest and other open-source libraries. Our changes add Quest OpenXR support, VR interaction and rendering work. Thanks to **[JaXt0r](https://github.com/JaXt0r)** for contributing the Windows PCVR port in [PR #1](https://github.com/dubrovskiy-yevhen-stakelogic/gothic2-vr/pull/1).
 
 Gothic II and its game materials belong to their respective rights holders. This is an unofficial community project. See [NOTICE.md](NOTICE.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE](LICENSE).
 
-The matching source archive is **Gothic-II-VR-0.1.1-Alpha-Source.zip**. Distribute it alongside the player package. Sources, build scripts and third-party notices are included; required external dependencies have pinned download URLs and checksums.
+The matching source archive is **Gothic-II-VR-0.2.0-Source.zip**. Distribute it alongside the player package. Sources, build scripts and third-party notices are included; required external dependencies have pinned download URLs and checksums.
 
 [Discord discussion and bug reports](https://discord.com/channels/747967102895390741/1543691482861408276)

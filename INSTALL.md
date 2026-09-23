@@ -1,6 +1,8 @@
-# Install Gothic II VR 0.1.1 Alpha
+# Install Gothic II VR 0.2.0
 
-## You need
+The combined **Gothic-II-VR-0.2.0-PCVR-and-Quest.zip** contains both targets. Use `Quest/` for standalone play, or `PCVR/` for SteamVR, Oculus/Meta Link and Virtual Desktop. Extract the complete archive before running a script.
+
+## Quest: you need
 
 - Windows 10/11 x64, internet access, a USB data cable and a Quest 3.
 - Your own installed **Gothic II Gold / Night of the Raven**. Clean game data is recommended; Windows DLL mods are unsupported.
@@ -9,7 +11,7 @@
 
 ## First installation
 
-1. Extract **Gothic-II-VR-0.1.1-Alpha-Quest.zip** to a writable folder, such as `C:\Games\Gothic2VR`. Do not run scripts inside the ZIP.
+1. Extract the combined archive to a writable folder, such as `C:\Games\Gothic2VR`, and open its **Quest** folder. Do not run scripts inside the ZIP.
 2. Connect the Quest with USB debugging allowed and run **INSTALL.bat**.
 3. Enter the path to your purchased game's installation folder when asked. Choose the folder containing `Data`, `_work` and `System`, not a save folder.
 4. The script automatically downloads checksum-verified ADB and portable Python when needed. It packages your local game files, verifies the APK, installs it and transfers the private data archive. Saves are excluded from packaging.
@@ -47,3 +49,17 @@ The source kit uses the same installer after **BUILD-APK.bat** completes. It ver
 ## If installation stops
 
 Keep the command window open and read the error. A checksum failure stops installation. Network interruption can be retried by running the script again. A previous partial *game transfer* is preserved for inspection; remove only that named `.part` file if you intend to restart it. Do not remove saves, settings or the installed app. The Android file picker requires confirmation in the headset even when all PC steps are automatic.
+
+## Windows PCVR
+
+1. Extract the combined archive to a writable folder and open **PCVR**. Keep the EXE, DLLs, launchers and `vrhands` together.
+2. Connect the headset through SteamVR/Steam Link, Meta Link/Air Link, or Virtual Desktop with VDXR.
+3. Run **START-STEAMVR.cmd**, **START-OCULUS.cmd**, or **START-VIRTUAL-DESKTOP.cmd** for that connection. These select OpenXR for this process without changing your system runtime.
+4. Confirm the detected Gothic II Gold / Night of the Raven installation or enter its root folder containing `Data` and `System`. The validated path is remembered locally. Game files are read from your purchased installation.
+5. Open the game menu with **both grips + Y**, or VR settings with **L3 + R3**. B goes back in menus.
+
+Requires a Vulkan-capable graphics driver and the Microsoft Visual C++ 2015-2022 x64 runtime. `START-PCVR.cmd` uses your existing OpenXR selection instead of selecting a connection explicitly.
+
+For an update, close the game, back up the existing PCVR folder, then copy the new archive's **PCVR contents** into that existing PCVR folder. Avoid creating a nested `PCVR/PCVR` folder. Player archives contain no `VR.ini`, `Gamepad.ini`, `Gothic.ini` or saves, so your existing files remain. Keep using the same working folder to retain its profile and save slots. An alternative is to extract separately and copy your own settings, `launcher-game-path.txt`, and save files into that folder.
+
+If startup fails, run `CHECK-OPENXR.cmd -Runtime SteamVR` (or `Oculus` / `VirtualDesktop`) and read `vrinfo.txt` and `log.txt`. `XR_ERROR_FORM_FACTOR_UNAVAILABLE` means the selected runtime cannot currently provide a headset; connect it through the selected application. Merely starting SteamVR does not select it system-wide. `START-STEAMVR.cmd -CheckOnly` checks launcher paths without starting the game. Custom runtime locations can use `-RuntimeManifest <full-path-to-x64-runtime.json>`.

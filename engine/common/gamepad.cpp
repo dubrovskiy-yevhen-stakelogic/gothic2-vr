@@ -192,7 +192,7 @@ void MainWindow::controllerAction(const GamepadBindings::Event& event) {
   const auto context=controllerContext();
   if(released) {
 #if defined(GOTHIC2VR_OPENXR)
-    if(action==PadAction::Run)vrRunning=false;
+    if(action==PadAction::Run && (event.phase==Phase::Cancel || vrMenu.settings.runHold))vrRunning=false;
 #endif
     const bool cancel=event.phase==Phase::Cancel;
     if(action==PadAction::AttackForward) player.controllerCombat(0,false,cancel);
@@ -285,7 +285,7 @@ void MainWindow::controllerAction(const GamepadBindings::Event& event) {
     case PadAction::Walk: key(KeyCodec::Walk); break;
     case PadAction::Run:
 #if defined(GOTHIC2VR_OPENXR)
-      if(!pl->isDown()){vrRunning=true;player.setSneaking(false);}
+      if(!pl->isDown())player.setSneaking(false);
 #endif
       break;
     case PadAction::Sneak:
@@ -348,10 +348,22 @@ void MainWindow::controllerAction(const GamepadBindings::Event& event) {
 void MainWindow::tickGamepad() {
 #if defined(GOTHIC2VR_CONTROLLER)
   const auto now=Application::tickCount();
-  const auto dt=std::min<uint64_t>(50,now-controllerLastPoll);
+  const auto pollDt=now-controllerLastPoll;
+  const auto dt=std::min<uint64_t>(50,pollDt);
   controllerLastPoll=now;
 #if defined(GOTHIC2VR_OPENXR)
   auto gp=QuestXr::inst().gamepad();
+  const uint32_t runButtons[]={GamepadState::A,GamepadState::B,GamepadState::X,GamepadState::Select,GamepadState::L3,GamepadState::R3};
+  bool runDown=false;
+  for(size_t i=0;i<vrMenu.settings.mapping.size();++i)
+    if(vrMenu.settings.mapping[i]==9 && (gp.buttons&runButtons[i]))runDown=true;
+  struct InputGuard {
+    Npc* npc; Vr::Running& run; bool& running; bool down,hold,accepted=false,waterInput=false;
+    ~InputGuard() {
+      if(!accepted) running=run.update(down,false,hold);
+      if(npc && !waterInput) npc->setVrSwimInput({},0);
+    }
+  } inputGuard{Gothic::inst().player(),vrRunButton,vrRunning,runDown,vrMenu.settings.runHold};
   if(auto pl=Gothic::inst().player())pl->setVrLocomotionSpeed(1.f);
   // A device the runtime has just bound: Touch, Index and WMR keep the shipped
   // button map, a wand or the simple-controller floor falls back to the three
@@ -617,9 +629,8 @@ void MainWindow::tickGamepad() {
   const PointF move(movement.first,movement.second);
 #if defined(GOTHIC2VR_OPENXR)
   const float yaw=camera->spin().y+(vrMenu.settings.headMovement?QuestXr::inst().headYawDegrees():0.f);
-  vrRunning=false;
-  const uint32_t runButtons[]={GamepadState::A,GamepadState::B,GamepadState::X,GamepadState::Select,GamepadState::L3,GamepadState::R3};
-  for(size_t i=0;i<vrMenu.settings.mapping.size();++i)if(vrMenu.settings.mapping[i]==9 && (gp.buttons&runButtons[i]))vrRunning=true;
+  inputGuard.accepted=connected && !gp.overflow && Gothic::inst().checkLoading()==Gothic::LoadState::Idle;
+  vrRunning=vrRunButton.update(runDown,inputGuard.accepted,vrMenu.settings.runHold);
   // Native WM_Walk is unusually slow. Use the normal locomotion animation
   // with a brisk baseline; L3 applies the player's running-speed setting.
   if(auto pl=Gothic::inst().player()) {
@@ -633,6 +644,17 @@ void MainWindow::tickGamepad() {
                       " map4=",vrMenu.settings.mapping[4]," map5=",vrMenu.settings.mapping[5]," walkMode=",int(pl->walkMode()));
       vrRunningLogged=int(vrRunning);
       }
+  }
+  if(auto pl=Gothic::inst().player(); pl && inputGuard.accepted && !pl->isDown()) {
+    auto& xr=QuestXr::inst();
+    const auto base=camera->vrBaseView(pl->position()+Vec3(0,vrEyeHeight,0),camera->spin().y);
+    pl->setVrSwimInput(xr.swimInput(base,pl->position().y,vrEyeHeight),float(pollDt)/1000.f);
+    inputGuard.waterInput=true;
+    if(pl->isSwim() || pl->isDive()) {
+      // Physical strokes own travel; keep the native swim animation/climb controller.
+      player.setControllerSwim(0,0,camera->spin().y+xr.headYawDegrees(),0,options.movementTurnSpeed);
+      return;
+    }
   }
   player.setControllerMovement(move.x,move.y,yaw,false,options.movementTurnSpeed);
   return;

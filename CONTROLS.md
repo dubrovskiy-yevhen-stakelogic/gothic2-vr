@@ -1,6 +1,6 @@
 # Controls
 
-Default controls for Quest Touch. Gameplay buttons can be changed in **VR settings в†’ Button mapping**. Menu confirmation and navigation use separate bindings.
+Default controls for Quest Touch and compatible PCVR controllers. Gameplay buttons can be changed in **VR settings > Button mapping**. Menu confirmation and navigation use separate bindings.
 
 ## Basic actions
 
@@ -8,20 +8,28 @@ Default controls for Quest Touch. Gameplay buttons can be changed in **VR settin
 | --- | --- |
 | Look | Head movement |
 | Move | Left stick |
-| Run | Hold the left stick button (L3) while moving |
-| Turn | Right stick; 30В° snap by default |
+| Run | Press L3 to toggle running; press again to return to walking |
+| Turn | Right stick; 30 degrees snap by default |
 | Jump | A |
 | Interact | B; look at the target, whose name appears on the HUD |
 | Inventory | X |
 | Journal | Y |
 | Crouch action | Right stick button (R3) |
-| Game menu | Left controller Menu |
-| VR settings | Hold both grips and press Menu |
+| Game menu | Hold both grips and press Y |
+| VR settings | Press both stick buttons together (L3 + R3) |
 | Menu selection | Left stick |
 | Confirm in menus | A |
 | Back in menus | B |
 
-Release the buttons and center both sticks after opening or closing a menu. In VR settings, left-stick up/down selects a row; left/right changes its value. Left trigger decreases and right trigger increases numeric values; A confirms. On action rows, the right trigger also confirms. B returns to the parent menu or closes the root menu. Head tracking remains active while the world is paused.
+The shortcuts work even if Steam Link intercepts Menu. The original Menu button for the game menu and both grips + Menu for VR settings remain fallbacks where the runtime exposes them. The new shortcuts take priority over the normal Journal, Run and Crouch mappings; holding a shortcut does not repeat it. Release Y or both stick clicks and center both sticks after opening or closing a menu. You may keep holding grips to retain a weapon. In VR settings, left-stick up/down selects a row; horizontal stick movement never changes values. Left trigger decreases and right trigger increases numeric values; A confirms. On action rows, the right trigger also confirms. B returns to the parent menu or closes the root menu. Head tracking remains active while the world is paused.
+
+**Locomotion > Run button** defaults to **Toggle**. Select **Hold** to restore running only while the mapped button is held. The preference is saved. Menus and loss of controller focus clear the running toggle.
+
+## Swimming
+
+Physical swimming uses the stroke and buoyancy model from the GTA San Andreas VR Quest port. Pull either hand backwards relative to your head to swim along your gaze; larger strokes give more thrust. Sweep your hands sideways or push down to tread water and rise. Look down and stroke to dive; look up and stroke to ascend. With still hands you slowly sink, as in that port. The movement stick does not propel you in this mode. Once the water is shallow enough to stand, use the left stick to walk onto the bank; normal walking and jumping resume. Tracked hands remain visible while swimming and diving.
+
+Near the surface, face a ledge and press the mapped Jump button (A by default) to attempt Gothic's collision-checked climb. Underwater depth controls Gothic's normal breath and drowning rules. Losing focus or opening a menu clears pending strokes; returning controllers do not produce a spurious stroke.
 
 ## Hands, weapons and holsters
 
@@ -45,7 +53,7 @@ Holsters select a suitable inventory item. A picked-up melee weapon is assigned 
 
 ## Comfort and image settings
 
-**Locomotion** controls running speed (0.75–2.0×), turning mode and speed, movement orientation, world size and room-scale movement. **Recenter tracking** recalibrates your position. Physical crouching lowers the camera but does not shrink the player's collision capsule.
+**Locomotion** controls running speed (0.75-2.0x), turning mode and speed, movement orientation, world size and room-scale movement. **Recenter tracking** recalibrates your position. Physical crouching lowers the camera but does not shrink the player's collision capsule.
 
 **Character stats** in the main VR menu opens the original status screen with level, experience, learning points, attributes and talents.
 

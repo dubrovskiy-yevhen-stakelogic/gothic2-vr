@@ -145,8 +145,8 @@ int main() {
   in.b=true;step();test(menu.page==Menu::Page::Main && menu.row()==Menu::Cheats,"back remembers root section");release();
   menu.selected=4;in.a=true;step();test(menu.page==Menu::Page::Holsters,"holster submenu reachable");release();
   auto selectRow=[&](Menu::Row row){const auto rows=menu.rows();menu.selected=int(std::find(rows.begin(),rows.end(),row)-rows.begin());};
-  selectRow(Menu::GripLock);in.x=1;step();test(menu.settings.interaction.gripLock,"holster menu toggles grip lock");release();
-  selectRow(Menu::HolsterX);in.x=1;step();test(menu.changed,"holster position edit requests save");
+  selectRow(Menu::GripLock);in.trigger=1;step();test(menu.settings.interaction.gripLock,"holster menu toggles grip lock");release();
+  selectRow(Menu::HolsterX);in.trigger=1;step();test(menu.changed,"holster position edit requests save");
 
   release();menu.settings.interaction.calibration=settings.interaction.calibration;
   menu.settings.interaction.offsets[0].x=.6f;selectRow(Menu::HolsterReset);in.a=true;step();
@@ -471,8 +471,8 @@ int main() {
     for(auto row:{Menu::CalStringSide,Menu::CalStringDepth}) {
       const auto rows=menu.rows();menu.selected=int(std::find(rows.begin(),rows.end(),row)-rows.begin());
       test(menu.selected<int(rows.size()) && menu.calibrationValueRow(),"horizontal string controls support calibration trigger editing");
-      in.x=1;menu.update(in,1000+int(row));test(menu.action==row,"horizontal calibration edit reaches gameplay save action");
-      in.x=0;menu.update(in,2000+int(row));
+      in.trigger=1;menu.update(in,1000+int(row));test(menu.action==row,"trigger calibration edit reaches gameplay save action");
+      in.trigger=0;menu.update(in,2000+int(row));
     }
   }
 

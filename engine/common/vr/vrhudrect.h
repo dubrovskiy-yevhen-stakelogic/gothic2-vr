@@ -16,6 +16,13 @@ struct HudRect {
   bool empty() const { return w<=0 || h<=0; }
   };
 
+// A fixed transparent canvas avoids SteamVR reallocating a shared texture for
+// every change of text bounds. Empty HUDs still omit the layer.
+inline HudRect hudLayerRegion(HudRect painted, uint32_t imgW, uint32_t imgH, bool stableExtent) {
+  if(stableExtent && !painted.empty()) return {0,0,int(imgW),int(imgH)};
+  return painted;
+  }
+
 // Adds the NDC bounds of a painted VectorImage (Tempest: x = px*2/W-1,
 // y = py*2/H-1, y down) shifted by whole pixels, padded, clamped to the image.
 inline void hudRectAdd(HudRect& acc, float nx0, float ny0, float nx1, float ny1,

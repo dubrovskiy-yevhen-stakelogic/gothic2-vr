@@ -10,6 +10,9 @@ as its baseline. Our changes add the standalone Quest OpenXR integration,
 tracked VR interaction and combat, controller hands, VR menus, stereo rendering
 and mobile rendering work.
 
+The Windows PCVR port was contributed by [JaXt0r](https://github.com/JaXt0r)
+in [PR #1](https://github.com/dubrovskiy-yevhen-stakelogic/gothic2-vr/pull/1).
+
 - [Original OpenGothic](https://github.com/Try/OpenGothic)
 - [Android OpenGothic baseline](https://github.com/Solessfir/OpenGothic)
 - [Original Tempest](https://github.com/Try/Tempest)

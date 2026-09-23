@@ -1,6 +1,6 @@
 # Alpha limitations
 
-**0.1.1 Alpha is an early, incomplete VR adaptation. The game is not ready for a complete playthrough.** Many features still need work, and a successful build does not establish full game compatibility.
+**0.2.0 is an early, incomplete VR adaptation. The game is not ready for a complete playthrough.** Many features still need work, and a successful build does not establish full game compatibility.
 
 - Quest 3 with Touch controllers is the tested target. Other Quest models and OpenXR devices are not validated. Controller-free hand tracking is not implemented.
 - Some original actions, spells, quests and interactions may not yet work correctly in VR. Keep several saves.
@@ -16,7 +16,7 @@
 
 ## Windows PCVR
 
-**Nothing below has been observed on a headset.** The Windows OpenXR target builds, links, starts and passes the host suites, and no HMD was available to run it. Every runtime limitation here is read off the code, not off a device, and the list is certainly incomplete. It is built from source only: there is no player package and no installer for it, and [BUILDING.md](BUILDING.md) is the whole distribution story.
+The maintainer confirmed SteamVR startup, locomotion, physical swimming and the disappearance of the reported outdoor flashes. Quest testing also confirmed visible hands in water, corrected water entry and successful shore exit. The final shared water changes have not had a separate final PCVR retest. Other runtime/controller combinations have not been validated. The combined player ZIP includes separate runtime launchers; see [INSTALL.md](INSTALL.md).
 
 - The desktop mirror window and the direct-output fast path cannot both be on. The eye images the direct path renders into are not created as sampleable, so nothing can read them back for a mirror. Mirroring therefore costs an extra full-eye copy. `Gothic.ini [ENGINE] vrMirrorOff=1` takes the other side of the trade: the fast path returns and the mirror window stops showing the game.
 - The frame loop waits for the runtime's predicted display time on the same thread that pumps Win32 messages. During a world load one frame can take seconds, the mirror window stops answering, and Windows paints it over and labels it **Not Responding**. The headset keeps its frames; only the mirror looks stalled. Moving the render loop off the message thread would mean a render thread owning every engine resource, so this is documented rather than worked around.
@@ -24,6 +24,8 @@
 - Gameplay defaults are Quest-calibrated. Holster positions, grab radii and swing thresholds were tuned against Touch controllers and Quest tracking volumes, and lighthouse-tracked systems with different controller geometry will likely need them revisited. They are adjustable in the VR settings and the **Holsters** and **Weapon calibration** menus.
 - Per-eye render width is capped at 1280 whatever the runtime recommends, and height follows from it at the recommended aspect. Desktop runtimes ask for two to three times the Quest's pixel count, so that cap is conservative here and the image will look soft. `Gothic.ini [ENGINE] vrMaxEyeWidth` raises it; every full-resolution render target is sized from that number, so VRAM and frame time follow it.
 - Mobile rendering paths written for Adreno hardware are still active. They are not wrong on a desktop GPU, but they are not tuned for one either, and their `Gothic.ini [ENGINE]` escape hatches - `vrBakedShadowOff`, `vrFogFoldOff`, `vrScaleRectOff`, `vrStashHalfOff`, `vrShadowTilesOff`, `vrSkyRateOff` and the rest - are read only on Android, so on Windows those paths keep their built-in defaults and cannot be switched off from the ini. A few of those defaults also differ from the Quest's, stereo HiZ occlusion most visibly: opt-in there, on here.
+- The runtime must expose `R8G8B8A8_SRGB`; BGRA-only and UNORM-only runtimes are rejected with a diagnostic until a correct conversion path is available.
+- Steam Link may reserve the Menu button. Use both grips + Y for the game menu and L3 + R3 for VR settings. Controllers without Y or stick clicks need a runtime remap or the original Menu / both grips + Menu fallback when available.
 - `-dx12` is refused: the OpenXR runtime creates the Vulkan instance and device, so a DirectX 12 backend could never reach the headset.
 
 Report the version, headset model, reproduction steps and settings in the [Discord channel](https://discord.com/channels/747967102895390741/1543691482861408276). Do not attach purchased game archives, private signing files or personal data. Installation paths are in [INSTALL.md](INSTALL.md).

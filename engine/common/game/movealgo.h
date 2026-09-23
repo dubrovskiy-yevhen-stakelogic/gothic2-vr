@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "vr/vrswimming.h"
 #include <limits>
 
 #include <zenkit/Material.hh>
@@ -60,6 +61,9 @@ class MoveAlgo final {
     void    multSpeed(float s){ mulSpeed=s; }
     void    setVrLocomotionSpeed(float s){ vrLocomotionSpeed=s; }
     void    clearSpeed();
+    void    setVrSwimInput(const Vr::SwimInput& in,float dt);
+    bool    vrSwimming() const { return vrSwim.input.enabled && (isSwim() || isDive()); }
+    bool    vrSwimCanClimb() const;
     bool    accessDamFly(float dx, float dz, char hitType);
 
     bool    testSlide(const Tempest::Vec3& p, DynamicWorld::CollisionTest& out) const;
@@ -95,6 +99,9 @@ class MoveAlgo final {
     bool    checkLastBounce() const;
 
   private:
+    void    traceVrWater(uint64_t dt,State before,const Tempest::Vec3& pos,
+                        const Tempest::Vec3& physics,const Tempest::Vec3& animation);
+    bool    tickVrSwim(uint64_t dt);
     void    tickMobsi (uint64_t dt);
     void    tickClimb (uint64_t dt);
     void    tickJumpup(uint64_t dt);
@@ -140,6 +147,11 @@ class MoveAlgo final {
       float x=0, y=0, z=std::numeric_limits<float>::infinity();
       };
 
+    Vr::Swimming        vrSwim;
+    uint64_t            vrSwimReportTime=0;
+    uint64_t            vrWaterTraceTime=0;
+    uint32_t            vrWaterTraceLines=0;
+    const char*         vrWaterReason="native";
     Npc&                npc;
     mutable CacheLand   cache;
     mutable CacheWater  cacheW;

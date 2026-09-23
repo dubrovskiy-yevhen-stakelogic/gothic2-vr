@@ -2,7 +2,7 @@
 
 Use Windows 10/11 x64 and a writable extracted source folder. No retail Gothic files are needed to build. A first build needs internet access and several gigabytes of free disk space.
 
-Two targets are built from this tree: the **Quest APK**, which is what players install, and the **Windows PCVR** executable, which is a bring-up target and is described further down. Both use the same VR layer.
+Two targets are built from this tree: the **Quest APK** and the **Windows PCVR** executable, described further down. Both use the same VR layer.
 
 ## Quest APK
 
@@ -41,11 +41,11 @@ Maintainers can supply an existing key using `GOTHIC2VR_KEYSTORE`, `GOTHIC2VR_KE
 
 ## Windows PCVR
 
-**This target has never been run on a headset.** It configures, compiles, links and starts, and the host suites cover its math, but every runtime claim below is reasoned from the code rather than observed in a HMD. Treat it as a bring-up target, not a release. The Quest APK remains the tested target.
+Quest swimming and shore exit, and SteamVR startup, locomotion, swimming and the outdoor-flash fix have headset confirmation. Other runtime combinations remain unverified. See [RELEASE_REVIEW.md](RELEASE_REVIEW.md) for the verification scope.
 
 Needs Visual Studio 2022 with the x64 C++ tools, CMake 3.22+, Ninja, and the [Vulkan SDK](https://vulkan.lunarg.com/). `vr/questxr.cpp` calls Vulkan directly, so `VULKAN_SDK` must be set in the shell that configures CMake. No Android toolchain, JDK or Gradle is involved.
 
-The build only reads `%VULKAN_SDK%\include` and `%VULKAN_SDK%\lib\vulkan-1.lib` (see `engine/CMakeLists.txt`); it never calls the SDK's own tools, validation layers or installer. A full LunarG install can be skipped by pointing `VULKAN_SDK` at a smaller, hand-built folder instead:
+The build reads `%VULKAN_SDK%\include` and `%VULKAN_SDK%\lib\vulkan-1.lib` (see `engine/CMakeLists.txt`) and runs `glslangValidator` from PATH to compile shaders. It does not require SDK validation layers or the SDK installer. A full LunarG install can be skipped by pointing `VULKAN_SDK` at a smaller, hand-built folder instead:
 
 - **`include/`** — the Vulkan-Headers tree. `config/source-lock.json` already pins and checksums `vulkan-sdk-1.4.357.0` for the Android build (`tempestvulkanheaders`); reuse that same archive's `include/` folder here instead of downloading it twice.
 - **`lib/vulkan-1.lib`** — an import library generated from the graphics driver's own `vulkan-1.dll`, from an x64 Developer Command Prompt:
@@ -116,4 +116,4 @@ Four `[ENGINE]` keys matter on this target. `vrBlankFrame` and `vrMirrorOff` are
 | `vrMaxEyeWidth` | `1280` | Per-eye render width cap. Every full-resolution render target is sized from it. `0` or less keeps 1280. Raise it for sharpness at the cost of VRAM and frame time. |
 | `vrMaxEyeHeight` | off | Extra height cap for runtimes that recommend an unusually tall eye image. Aspect is preserved, so the width shrinks with it. |
 
-There is no installer and no player package for this target. Building it is the only way to get it, and it is not part of the released Quest ZIP.
+The Windows release is in the **PCVR** folder of **Gothic-II-VR-0.2.0-PCVR-and-Quest.zip**. When preparing a PCVR folder from your own build, also copy the contents of `pcvr/` beside the executable for the runtime-selecting launchers. The standalone APK and its installer occupy the separate **Quest** folder in the same archive.

@@ -1,6 +1,7 @@
 #include "movealgo.h"
 
 #include <Tempest/Log>
+#include <cstdio>
 
 #include "world/objects/npc.h"
 #include "world/objects/interactive.h"
@@ -156,7 +157,15 @@ void MoveAlgo::tick(uint64_t dt, MvFlags moveFlg) {
     return;
     }
 
-  if(!implTick(dt,moveFlg))
+  const bool trace=npc.isPlayer() && vrSwim.input.enabled;
+  const auto before=flags;
+  const auto posBefore=trace ? npc.position() : Tempest::Vec3();
+  const auto physBefore=trace ? npc.physic.position() : Tempest::Vec3();
+  const auto animBefore=trace ? npc.animMoveSpeed(dt) : Tempest::Vec3();
+  vrWaterReason="native";
+  const bool moved=implTick(dt,moveFlg);
+  if(trace) traceVrWater(dt,before,posBefore,physBefore,animBefore);
+  if(!moved)
     return;
 
   if(cache.sector!=nullptr && portal!=cache.sector) {
@@ -169,6 +178,36 @@ void MoveAlgo::tick(uint64_t dt, MvFlags moveFlg) {
     }
   }
 
+void MoveAlgo::traceVrWater(uint64_t dt,State before,const Tempest::Vec3& pos,
+                            const Tempest::Vec3& physics,const Tempest::Vec3& animation) {
+  // Observe existing query results only: diagnostics must not refresh caches or move the player.
+  if(vrWaterTraceLines>=3000) return;
+  if(before!=Swim && before!=Dive && before!=InWater &&
+     flags!=Swim && flags!=Dive && flags!=InWater) return;
+  const auto now=npc.world().tickCount();
+  if(before==flags && now-vrWaterTraceTime<100) return;
+  vrWaterTraceTime=now; ++vrWaterTraceLines;
+  const auto p=npc.position(),ph=npc.physic.position(),delta=p-pos;
+  // Tempest truncates each log message at 255 bytes. Keep related fields in
+  // separate compact messages so heading and depth survive in device reports.
+  char line[256];
+  const auto stamp=static_cast<unsigned long long>(now);
+  std::snprintf(line,sizeof(line),
+    "VR WATER TRACE t=%llu dt=%llu state=%d->%d why=%s from=%.1f,%.1f,%.1f to=%.1f,%.1f,%.1f delta=%.2f,%.2f,%.2f yaw=%.1f",
+    stamp,static_cast<unsigned long long>(dt),int(before),int(flags),vrWaterReason,
+    pos.x,pos.y,pos.z,p.x,p.y,p.z,delta.x,delta.y,delta.z,npc.rotation());
+  Tempest::Log::i(line);
+  std::snprintf(line,sizeof(line),
+    "VR WATER DEPTH t=%llu ground=%.1f valid=%d normalY=%.3f at=%.1f,%.1f,%.1f water=%.1f chest=%.1f eye=%.1f surface=%.1f fallY=%.2f",
+    stamp,cache.v.y,int(cache.hasCol),cache.n.y,cache.x,cache.y,cache.z,
+    cacheW.wdepth,waterDepthChest(),vrSwim.input.eyeHeight,vrSwim.input.surfaceOffset,fallSpeed.y);
+  Tempest::Log::i(line);
+  std::snprintf(line,sizeof(line),
+    "VR WATER MOTION t=%llu anim=%.2f,%.2f,%.2f physFrom=%.1f,%.1f,%.1f physTo=%.1f,%.1f,%.1f",
+    stamp,animation.x,animation.y,animation.z,physics.x,physics.y,physics.z,ph.x,ph.y,ph.z);
+  Tempest::Log::i(line);
+}
+
 bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
   if(flags==ClimbUp) {
     tickClimb(dt);
@@ -178,6 +217,9 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
     tickJumpup(dt);
     return true;
     }
+
+  if(vrSwimming() && npc.isPlayer() && !npc.isDown())
+    return tickVrSwim(dt);
 
   const auto state = flags;
   const bool dead  = npc.isDead();
@@ -191,6 +233,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
 
   DynamicWorld::CollisionTest info;
   if(!tryMove(dp,info)) {
+    vrWaterReason="native-collision";
     info.preFall = false;
     if(state==Slide) {
       onGravityFailed(info,dt);
@@ -302,6 +345,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
       }
     else if(gpos + chest <= water+0.01f && npc.hasSwimAnimations()) {
       if(state!=Swim && state!=Dive) {
+        vrWaterReason="native-depth-entry";
         const bool splash = grav || fallSpeed.quadLength() >= 1.f;
         setState(Swim);
         if(splash)
@@ -346,6 +390,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
 
   // above ground/void
   if(!gValid || (pos.y>ground && dY >= stickThreshold && state!=InWater)) {
+    vrWaterReason="native-no-support";
     if(!gValid && swim) {
       // sea monster condition?
       }
@@ -377,6 +422,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
         setState(InAir);
         }
       else if(state==InWater) {
+        vrWaterReason="wade-no-support-to-swim";
         npc.setAnimRotate(0);
         setState(Swim);
         }
@@ -428,6 +474,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
     }
 
   if(!dead && testSlide(pos,normal,info)) {
+    vrWaterReason="native-slope";
     if(state==InWater || state==Swim) {
       npc.setPosition(pos0);
       return false;
@@ -459,6 +506,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
     }
 
   if(gValid && dY <= stickThreshold && fallSpeed.y<=0.f) {
+    vrWaterReason="native-ground-snap";
     const float gpos = std::max(npc.position().y, ground);
     if(gpos + knee <= water) {
       setState(InWater);
@@ -485,6 +533,80 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
   // npc.setPosition(pos0);
   return true;
   }
+
+void MoveAlgo::setVrSwimInput(const Vr::SwimInput& in,float dt) {
+  if(!isSwim() && !isDive()) {
+    vrSwim.reset();
+    if(in.enabled && Vr::SwimMotion::Finite(in.direction)) vrSwim.input=in;
+    return;
+  }
+  vrSwim.sample(in,dt);
+}
+
+bool MoveAlgo::vrSwimCanClimb() const {
+  return vrSwimming() && waterRay(npc.position())-npc.position().y<=vrSwim.input.surfaceOffset+35.f;
+}
+
+bool MoveAlgo::tickVrSwim(uint64_t dt) {
+  vrWaterReason="physical-swim";
+  const float seconds=float(dt)/1000.f;
+  if(!(seconds>0 && seconds<=.1f)) { vrSwim.blocked(); return true; }
+  auto pos=npc.position();
+  auto water=waterRay(pos);
+  bool groundValid=false;
+  auto ground=dropRay(pos,groundValid);
+  const auto leaveWater=[&]() {
+    if(std::isfinite(water) && pos.y<water &&
+       !(groundValid && ground+waterDepthChest()>water+eps)) return false;
+    // The swim collider covers the torso: logical feet can still be below the
+    // bank. Restore ground height before walking, whose first move would collide.
+    if(groundValid && ground>pos.y && !tryMove(0,ground-pos.y,0)) {
+      vrWaterReason="exit-grounding-blocked";
+      return false;
+    }
+    vrWaterReason="physical-exit";
+    // Keep the VR water-depth policy for the following walking tick as well.
+    vrSwim.blocked(); clearSpeed(); npc.setDirectionY(0); setState(Run);
+    return true;
+  };
+  if(leaveWater()) return true;
+  const auto& in=vrSwim.input;
+  const float clearance=(water-in.surfaceOffset-pos.y)/in.units;
+  auto v=vrSwim.advance(seconds,clearance,groundValid && pos.y<=ground+eps);
+  Tempest::Vec3 dp(v.x,v.y,v.z); dp*=seconds*in.units;
+  if(groundValid) dp.y=std::max(dp.y,ground-pos.y);
+  // The front of the body reaches a slope before the feet's centre ray does.
+  // Follow walkable slopes while still in water, not only once already shallow.
+  if((dp.x!=0 || dp.z!=0) && water-pos.y<=in.surfaceOffset+stepHeight()) {
+    const auto forward=Tempest::Vec3::normalize(Tempest::Vec3(dp.x,0,dp.z));
+    auto probe=pos+Tempest::Vec3(dp.x,stepHeight(),dp.z)+forward*npc.physic.radiusXZ();
+    bool bankValid=false;
+    const float bank=dropRay(probe,bankValid);
+    if(bankValid && bank>pos.y && bank-pos.y<=stepHeight() && normalRay(probe).y>=slideAngle())
+      dp.y=std::max(dp.y,bank-pos.y);
+  }
+  DynamicWorld::CollisionTest collision;
+  if(!tryMove(dp,collision)) {
+    vrSwim.blocked();
+    const auto now=npc.world().tickCount();
+    if(now-vrSwimReportTime>=1000) {
+      vrSwimReportTime=now;
+      Tempest::Log::i("VR shore blocked pos=",pos.x,",",pos.y,",",pos.z,
+                     " water=",water," ground=",ground," valid=",groundValid,
+                     " move=",dp.x,",",dp.y,",",dp.z," radius=",npc.physic.radiusXZ());
+    }
+    // A blocked horizontal stroke must not prevent treading upwards along a wall.
+    if(dp.y!=0) tryMove(0,dp.y,0,collision);
+  }
+  pos=npc.position(); water=waterRay(pos); ground=dropRay(pos,groundValid);
+  if(leaveWater()) return true;
+  const float mouth=pos.y+in.eyeHeight-.10f*in.units;
+  if(mouth<water-.025f*in.units) setState(Dive);
+  else if(mouth>water+.025f*in.units) setState(Swim);
+  const auto direction=Vr::SwimMotion::Unit(in.direction);
+  npc.setDirectionY(isDive()?std::asin(std::clamp(direction.y,-.98f,.98f))*180.f/float(M_PI):0.f);
+  return true;
+}
 
 void MoveAlgo::clearSpeed() {
   fallSpeed.x = 0;
@@ -640,6 +762,12 @@ float MoveAlgo::waterDepthKnee() const {
   }
 
 float MoveAlgo::waterDepthChest() const {
+  // Native swimming animations and the tracked VR eye have different heights.
+  // Use one standing-depth boundary for BOTH entering water and leaving it;
+  // otherwise native walking can immediately put a grounded VR player back in Swim.
+  if(vrSwim.input.enabled && npc.isPlayer() && std::isfinite(vrSwim.input.eyeHeight) &&
+     std::isfinite(vrSwim.input.units) && vrSwim.input.units>0)
+    return std::max(0.f,vrSwim.input.eyeHeight-.10f*vrSwim.input.units);
   auto gl = npc.guild();
   return float(npc.world().script().guildVal().water_depth_chest[gl]);
   }
@@ -800,6 +928,17 @@ void MoveAlgo::setState(State f) {
   if(f==flags)
     return;
 
+  if(vrSwim.input.enabled && npc.isPlayer() &&
+     (f==Swim || f==Dive || flags==Swim || flags==Dive)) {
+    const auto now=npc.world().tickCount();
+    if(now-vrSwimReportTime>=1000) {
+      vrSwimReportTime=now;
+      const auto p=npc.position();
+      Tempest::Log::i("VR water state ",int(flags)," -> ",int(f),
+                     " pos=",p.x,",",p.y,",",p.z," standingDepth=",waterDepthChest());
+    }
+  }
+
 #ifndef NDEBUG
   assertStateChange(f);
 #endif
@@ -860,10 +999,10 @@ void MoveAlgo::assertStateChange(State f) {
       assert(f==Run || f==Slide || f==Jump || f==JumpUp || f==Swim || f==Dive);
       break;
     case Swim:
-      assert(f==Run || f==InAir || f==InWater || f==Dive);
+      assert(f==Run || f==InAir || f==InWater || f==Dive || f==JumpUp || f==ClimbUp);
       break;
     case Dive:
-      assert(f==InAir || f==Swim || f==InWater);
+      assert(f==Run || f==InAir || f==Swim || f==InWater || f==JumpUp || f==ClimbUp);
       break;
     }
 

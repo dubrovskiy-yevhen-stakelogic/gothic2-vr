@@ -485,6 +485,7 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
   player->setWeaponRequirementsVr(true,settings.ignoreWeaponRequirements);
   const auto parried=player->consumeParryVr();
   for(unsigned i=0;i<2;++i)if(parried&(1u<<i)){xr.haptic(i,.8f,.08f);message("Parried",now);Tempest::Log::i("VR melee parry hand=",i);}
+  const bool swimmingHands=allowed && xr.focused() && !player->isDown() && (player->isSwim() || player->isDive()) && player->interactive()==nullptr;
   allowed=allowed && xr.focused() && !player->isDown() && !player->isSwim() && !player->isDive() && player->interactive()==nullptr;
   const bool preview=menu.interactionPreview(xr.focused());
   if(now>=roofCheck || (body.head-roofPosition).length()>100.f) {
@@ -493,10 +494,27 @@ bool Gameplay::update(World* world,QuestXr& xr,Menu& menu,const Matrix& base,uin
   }
   if(releaseFrame!=0 && now>releaseFrame+ReleaseDebounce::gapMs)releaseBlockedUntil=now+ReleaseDebounce::blockMs;
   releaseFrame=now;
-  if(!allowed) {suspend();if(!preview)return changed;}
+  if(!allowed) {suspend();
+    if(!preview) {
+      // Swimming disables item actions, but physical strokes still need visible hands.
+      if(swimmingHands) {
+        const auto pad=xr.gamepad();
+        for(uint32_t i=0;i<2;++i) {
+          auto& h=hands[i];
+          h.grip=xr.handWorld(i,base);h.aim=xr.handWorld(i,base,true);
+          h.squeeze=xr.gripValue(i);h.trigger=i==0?pad.leftTrigger:pad.rightTrigger;
+          h.visible=xr.gripTracked(i) && settings.showHands;
+        }
+      }
+      return changed;
+    }
+  }
   const auto pad=xr.gamepad();
-  // Both grips belong to the VR-menu chord. It must never draw or strike too.
-  const bool chord=xr.gripValue(0)>.65f && xr.gripValue(1)>.65f && (pad.buttons&Tempest::GamepadState::Start)!=0;
+  // Menu chords must not draw, release or strike with held items.
+  const auto stickClicks=Tempest::GamepadState::L3|Tempest::GamepadState::R3;
+  const bool chord=(pad.buttons&stickClicks)==stickClicks ||
+      (xr.gripValue(0)>.65f && xr.gripValue(1)>.65f &&
+       (pad.buttons&(Tempest::GamepadState::Start|Tempest::GamepadState::Select))!=0);
   // Resolve release for both hands before catch/draw, independent of loop order.
   for(int i=0;i<2;++i) {
     auto& h=hands[size_t(i)];h.grip=xr.handWorld(uint32_t(i),base);h.aim=xr.handWorld(uint32_t(i),base,true);
@@ -959,7 +977,7 @@ std::string Gameplay::label(Menu::Row row,const Menu& menu) const {
     case Menu::CalAimReset:return "Reset aim for this item";
     case Menu::CalSupReset:return "Reset support for this item";
     case Menu::CalHolReset:return "Reset holstered model for this item";
-    case Menu::MapReset:return "Reset: A jump / hold L3 run / R3 crouch";
+    case Menu::MapReset:return "Reset: A jump / L3 run / R3 crouch";
     case Menu::CalHand:return std::string("Hand: < ")+(menu.calibrationHand==0?"Left":"Right")+" >";
     case Menu::CalItem:{auto item=contextPlayer?contextPlayer->getItem(calibrationItem):nullptr;return item?"Item: < "+std::string(item->displayName())+" >":"No owned items - use Give items";}
     case Menu::CalReset:return "Reset this item / hand";

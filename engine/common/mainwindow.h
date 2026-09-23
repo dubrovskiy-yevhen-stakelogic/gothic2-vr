@@ -3,6 +3,7 @@
 #include "diagnostics/baselinesmoke.h"
 #include "vr/xrmath.h"
 #include "vr/vrcontrols.h"
+#include "vr/vrrunning.h"
 #include "vr/vrwelcome.h"
 #include "vr/vrprofiler.h"
 #include "vr/lightroutecontroller.h"
@@ -202,6 +203,7 @@ class MainWindow : public Tempest::Window {
     Tempest::Vec3         vrLastPlayerPosition;
     float                 vrEyeHeight=170;
     float                 vrCrouchOffset=0;
+    Vr::Running           vrRunButton;
     bool                  vrRunning=false;
     int                   vrRunningLogged=-1;
     uint32_t              vrProfileGeneration=0;

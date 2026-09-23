@@ -1,14 +1,17 @@
-# Release verification — 0.1.1 Alpha
+# Release verification - 0.2.0
 
-Public APK version: **0.1.1-alpha**, Android version code **61**.
+The final release retains the gameplay from the accepted heading-fix build. On 2026-09-23 the maintainer confirmed that Quest swimming and shore exit now work, after earlier confirmation of hand visibility and the water-entry visual fix. SteamVR startup, locomotion, swimming and the outdoor-flash fix were confirmed in earlier tests. The final shared water changes still lack a separate final PCVR retest; Oculus/Meta Link and Virtual Desktop gameplay are unverified.
 
-- The APK was built from this public source kit with release compilation, signature verification and Android lint. All **33 artifact checks** passed. It is signed with the same certificate as 0.1.0, so it installs as an update.
-- **3979 exported engine, packaging, dependency and resource files** match the current development sources byte for byte.
-- All **15 host suites (4926 checks)** passed against the public sources, including NPC gaze focus, weapon requirement damage, grip release debounce, pickup holster assignment and the character stats menu action.
-- Eight deployment scenarios passed against a simulated ADB interface.
-- A development build of these changes was played on Quest 3 by the maintainer: NPC dialogue, the character stats menu and weapons were checked, and the world-entry stall was no longer observed. Later review fixes (switching focus between adjacent NPCs, pipeline job cancellation, arrow damage qualification) are covered by host checks and the build only. This release preparation did not install or launch the public APK.
-- Reviewed the changed engine, Tempest and VR source for threading and lifetime errors, stale versions, local paths and placeholder or narrative comments. Original upstream copyright and license notices remain intact.
+## Review scope
 
-Host checks and a short headset session do not establish a complete playthrough or performance on other headsets. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+The review covered controller ownership and menu shortcuts, toggle/hold running, neutral swim heading, native water transitions, hand visibility, per-eye water classification, the early GPU submission boundary, runtime launchers and the release installer. Release preparation changes documentation and comments only; it does not change gameplay logic.
 
-`SOURCE-MANIFEST.json` and `SOURCE-SHA256.txt` describe the complete public source snapshot. Player APK SHA256: `a7cf1f3ecbc6dad30dc4ee824fb56d3bc3e92680c12946cc3c77d43ef7376d10`.
+Host regression coverage includes 29 suites, with PCVR, Quest, flat and touch camera cases. Android checks cover package identity, version 0.2.0 / code 62, ARM64 native libraries, signature, assets and Android lint. Separate launcher tests use a stub executable; installer tests use simulated ADB and do not touch a headset.
+
+## Distribution checks
+
+The source archive includes engine code, shared VR fixes, shaders, tests, Quest build/install scripts, PCVR launchers and dependency notices. A file manifest and SHA256 list cover the source snapshot. The archive is extracted into a clean directory and audited again without exclusions for local build state.
+
+The player archive contains separate PCVR and Quest folders, current documentation, licenses and a file checksum manifest. Executable and APK hashes are checked against the verified builds. Purchased game files, personal settings, saves, signing keys and local diagnostic logs are excluded.
+
+Source review and automated checks do not establish full-playthrough compatibility or support for untested devices. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md).

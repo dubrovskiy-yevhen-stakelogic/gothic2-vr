@@ -6,6 +6,7 @@
 #include <Tempest/VulkanApi>
 #include <algorithm>
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -79,7 +80,7 @@ QuestXr::QuestXr() {
     XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO}; info.next=Vr::Platform::instanceCreateNext();
     std::strcpy(info.applicationInfo.applicationName,"Gothic II VR");
     std::strcpy(info.applicationInfo.engineName,"OpenGothic Tempest");
-    info.applicationInfo.applicationVersion=61; info.applicationInfo.engineVersion=1;
+    info.applicationInfo.applicationVersion=62; info.applicationInfo.engineVersion=1;
     info.applicationInfo.apiVersion=XR_MAKE_VERSION(1,0,34);
     info.enabledExtensionCount=uint32_t(extensions.size()); info.enabledExtensionNames=extensions.data();
     check(xrCreateInstance(&info,&instance),"create instance");
@@ -96,6 +97,11 @@ QuestXr::QuestXr() {
     XrInstanceProperties properties{XR_TYPE_INSTANCE_PROPERTIES};
     check(xrGetInstanceProperties(instance,&properties),"runtime properties");
     Tempest::Log::i("OpenXR runtime: ",properties.runtimeName);
+    // Optional full-extent HUD for runtime diagnostics; cropped bounds are the default.
+    const char* croppedHud=std::getenv("GOTHIC2VR_STEAMVR_CROPPED_HUD");
+    steamVrStableHud=std::strstr(properties.runtimeName,"SteamVR")!=nullptr &&
+                     croppedHud && std::strcmp(croppedHud,"0")==0;
+    Tempest::Log::i("OpenXR HUD extent: ",steamVrStableHud?"stable (SteamVR)":"painted bounds");
     XrSystemGetInfo systemInfo{XR_TYPE_SYSTEM_GET_INFO}; systemInfo.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     check(xrGetSystem(instance,&systemInfo,&system),"get HMD");
     {
@@ -190,15 +196,8 @@ void QuestXr::createActions() {
   aim=action("aim",XR_ACTION_TYPE_POSE_INPUT);
   gripPoseAction=action("hand_grip_pose",XR_ACTION_TYPE_POSE_INPUT);
   hapticAction=action("hand_haptic",XR_ACTION_TYPE_VIBRATION_OUTPUT);
-  // Suggested bindings, one list per interaction profile. The profiles do not
-  // share a component set — wands have no thumbstick and no face buttons, Index
-  // has no menu button, the simple controller has only select and menu — and a
-  // binding to a component a profile does not define makes
-  // xrSuggestInteractionProfileBindings reject that profile's entire list. So each
-  // list is built from scratch instead of being derived from Touch's, and one
-  // rejection is logged and skipped rather than taking the others, or the session,
-  // down with it. The runtime activates whichever profile matches the physical
-  // device, so the Quest still binds Touch exactly as before.
+  // Build each profile from its supported components. An invalid component
+  // rejects the entire profile; log that failure and continue with the others.
   std::vector<XrActionSuggestedBinding> bindings;
   // both(): the same /input/ component on each hand. one(): a single hand, with
   // the sub-path spelled out because haptics live under /output/ instead.
@@ -415,39 +414,18 @@ void QuestXr::attach(Tempest::Device& device) {
 // Colour format of the three XR swapchains, negotiated against what the runtime
 // actually offers instead of assuming the Quest's RGBA8 sRGB.
 //
-// The preference order is a capability order, not a taste order:
-//  * R8G8B8A8_SRGB  - the only fully correct choice. The mutable-format view is
-//    R8G8B8A8_UNORM, which is exactly what VulkanApi::borrowColorAttachment
-//    accepts (gapi/vulkanapi.cpp: RGBA8_UNORM in COLOR_ATTACHMENT_OPTIMAL and
-//    nothing else), so direct output is possible; and queueEyeCopy's texel-exact
-//    vkCmdCopyImage lands the tonemapper's sRGB-encoded RGBA8_UNORM bytes in an
-//    sRGB image the compositor then decodes.
-//  * B8G8R8A8_SRGB  - accepted so a runtime without RGBA8 still starts, but no
-//    RGBA8_UNORM view is compatible with it, so direct output is off, and the
-//    texel copy exchanges red and blue. Logged as an error, not ignored.
-//  * the UNORM variants - a last resort; the compositor is told the already
-//    encoded bytes are linear.
+// The tonemapper writes sRGB-encoded RGBA bytes into RGBA8_UNORM.
+// A texel copy is correct only when the compositor decodes an RGBA sRGB image.
+// Other formats need a conversion pass before they can be supported.
 void QuestXr::selectSwapchainFormat(const std::vector<int64_t>& formats) {
-  struct Candidate { VkFormat format,view; const char* name; bool swapsRedBlue; };
-  // view==VK_FORMAT_UNDEFINED marks a candidate that cannot serve direct output.
-  static const Candidate preference[]={
-    {VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM,"R8G8B8A8_SRGB", false},
-    {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_UNDEFINED,     "B8G8R8A8_SRGB", true },
-    {VK_FORMAT_R8G8B8A8_UNORM,VK_FORMAT_R8G8B8A8_UNORM,"R8G8B8A8_UNORM",false},
-    {VK_FORMAT_B8G8R8A8_UNORM,VK_FORMAT_UNDEFINED,     "B8G8R8A8_UNORM",true },
-    };
-  for(const auto& candidate:preference) {
-    if(std::find(formats.begin(),formats.end(),int64_t(candidate.format))==formats.end()) continue;
-    colorFormat=candidate.format; colorView=candidate.view; colorFormatName=candidate.name;
-    colorSwapsRedBlue=candidate.swapsRedBlue;
-    Tempest::Log::i("OpenXR swapchain format: ",colorFormatName," (",int(colorFormat),")",
-                    colorView==VK_FORMAT_UNDEFINED?"; direct output unavailable, copy route only":"; direct output eligible");
-    if(colorSwapsRedBlue)
-      Tempest::Log::e("OpenXR swapchain format ",colorFormatName," has BGRA channel order: the eye copy is a texel-exact "
-                      "vkCmdCopyImage, so red and blue will be exchanged. Please report the runtime.");
-    return;
-    }
-  throw std::runtime_error("OpenXR exposes no 8-bit RGBA/BGRA swapchain format");
+  if(std::find(formats.begin(),formats.end(),int64_t(VK_FORMAT_R8G8B8A8_SRGB))==formats.end())
+    throw std::runtime_error("OpenXR runtime does not offer R8G8B8A8_SRGB. "
+                             "BGRA and linear UNORM swapchains require colour conversion that is not supported. "
+                             "Try another OpenXR runtime.");
+  colorFormat=VK_FORMAT_R8G8B8A8_SRGB;
+  colorView=VK_FORMAT_R8G8B8A8_UNORM;
+  colorFormatName="R8G8B8A8_SRGB";
+  Tempest::Log::i("OpenXR swapchain format: ",colorFormatName," (",int(colorFormat),"); direct output eligible");
 }
 
 void QuestXr::createSwapchains(Tempest::Device& device) {
@@ -566,8 +544,9 @@ bool QuestXr::beginFrame() {
     check(xrBeginFrame(session,&begin),"begin frame");
   }
   begun=true; displayTime=frame.predictedDisplayTime;
+  frameSkipReason="render incomplete";
   if(refreshHz<=0 && frame.predictedDisplayPeriod>0) refreshHz=float(1e9/double(frame.predictedDisplayPeriod));
-  if(!frame.shouldRender) { roomMotion.invalidate(); return false; }
+  if(!frame.shouldRender) { frameSkipReason="runtime shouldRender=false"; roomMotion.invalidate(); return false; }
   XrViewLocateInfo locate{XR_TYPE_VIEW_LOCATE_INFO}; locate.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
   locate.displayTime=displayTime; locate.space=localSpace;
   XrViewState viewState{XR_TYPE_VIEW_STATE}; uint32_t count=0;
@@ -575,7 +554,12 @@ bool QuestXr::beginFrame() {
   constexpr XrViewStateFlags validViews=XR_VIEW_STATE_POSITION_VALID_BIT|XR_VIEW_STATE_ORIENTATION_VALID_BIT;
   XrSpaceLocation head{XR_TYPE_SPACE_LOCATION}; check(xrLocateSpace(viewSpace,localSpace,displayTime,&head),"locate head");
   trackingValid=count==2 && (viewState.viewStateFlags&validViews)==validViews && (head.locationFlags&validPose)==validPose;
-  if(!trackingValid) { roomMotion.invalidate(); return false; }
+  if(!trackingValid) {
+    frameSkipReason="invalid head/view tracking";
+    if(emptyFrameStreak==0)
+      Tempest::Log::i("OpenXR invalid tracking views=",count," viewFlags=",uint64_t(viewState.viewStateFlags)," headFlags=",uint64_t(head.locationFlags));
+    roomMotion.invalidate(); return false;
+  }
   if(!visibilityFovLogged) {
     // The READY mask is view-space geometry. Retain the first actual valid FOV
     // for its offline projection; diagnostics never change frame acceptance.
@@ -835,6 +819,23 @@ float QuestXr::headYawDegrees() const {
   return std::atan2(relative[2][0],relative[2][2])*180.f/3.14159265358979323846f;
 }
 
+Vr::SwimInput QuestXr::swimInput(const Tempest::Matrix4x4& base,float playerY,float eyeHeight) const {
+  Vr::SwimInput out;
+  out.enabled=focused(); out.units=unitsPerMeter; out.poseTime=uint64_t(displayTime);
+  const auto q=headPose.orientation;
+  out.forward={-2*(q.x*q.z+q.w*q.y),-2*(q.y*q.z-q.w*q.x),-(1-2*(q.x*q.x+q.y*q.y))};
+  for(uint32_t i=0;i<2;++i) {
+    const auto p=gripPoses[i].position;
+    out.relative[i]={p.x-headPose.position.x,p.y-headPose.position.y,p.z-headPose.position.z};
+    out.valid[i]=gripTracked(i);
+  }
+  auto head=headView(base); head.inverse();
+  out.direction={head[2][0],head[2][1],head[2][2]};
+  out.eyeHeight=head[3][1]-playerY;
+  out.surfaceOffset=std::max(0.f,eyeHeight-.20f*unitsPerMeter);
+  return out;
+}
+
 void QuestXr::invalidateCopyCache() {
   // The caller invokes this whenever the source Attachment is replaced.
   // Existing commands are reset lazily; each previous copy has completed its fence.
@@ -1085,6 +1086,15 @@ void QuestXr::endFrame(bool world,bool complete,bool overlay,float hudDistance) 
     eye.acquired=false; eye.waited=false; eye.copySubmitted=false;
   }
   if(!begun) return;
+  if(!complete) {
+    ++emptyFrameCount; ++emptyFrameStreak;
+    if(emptyFrameStreak==1 || emptyFrameStreak%300==0)
+      Tempest::Log::i("OpenXR empty frame after=",frameCount," reason=",frameSkipReason,
+                      " streak=",emptyFrameStreak," total=",emptyFrameCount," state=",int(state)," displayTime=",displayTime);
+  } else if(emptyFrameStreak>0) {
+    Tempest::Log::i("OpenXR rendering resumed after ",emptyFrameStreak," empty frames; total=",emptyFrameCount);
+    emptyFrameStreak=0;
+  }
   XrCompositionLayerProjectionView projectionViews[2]={{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
   for(uint32_t i=0;i<2;++i) {
     projectionViews[i].pose=views[i].pose; projectionViews[i].fov=views[i].fov;
@@ -1116,7 +1126,7 @@ void QuestXr::endFrame(bool world,bool complete,bool overlay,float hudDistance) 
   hud.eyeVisibility=XR_EYE_VISIBILITY_BOTH; hud.subImage=wholeImage; hud.subImage.swapchain=eyes[2].handle;
   // Only the painted rectangle of the HUD image (vr/vrhudrect.h): the
   // compositor shades every display pixel a layer covers.
-  const Vr::HudRect rect{hudRect.x,hudRect.y,hudRect.w,hudRect.h};
+  const auto rect=Vr::hudCopyRegion({hudRect.x,hudRect.y,hudRect.w,hudRect.h},extent.width,extent.height);
   const auto quad=Vr::hudQuad(rect,extent.width,extent.height,hudDistance);
   if(!rect.empty()) hud.subImage.imageRect={{rect.x,rect.y},{rect.w,rect.h}};
   hud.pose.orientation.w=1; hud.pose.position={quad.posX,quad.posY,-hudDistance};

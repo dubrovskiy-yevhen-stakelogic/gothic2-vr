@@ -274,7 +274,7 @@ bool Camera::isFree() const {
   }
 
 bool Camera::isInWater() const {
-  return inWater;
+  return vrViewActive ? vrInWater : inWater;
   }
 
 bool Camera::isCutscene() const {
@@ -1116,5 +1116,10 @@ void Camera::setVrView(const Matrix4x4& view,const Matrix4x4& projection) {
   vrView=view; vrProjection=projection;
   auto inverse=view; inverse.inverse();
   vrOrigin=Vec3(0); inverse.project(vrOrigin);
+  // Flat camera pitch/crossing history does not describe the tracked VR eye.
+  // Query each view directly, including the first frame after a dive or load.
+  vrInWater=false;
+  if(auto world=Gothic::inst().world())
+    vrInWater=world->physic()->waterRay(vrOrigin,0.f).wdepth>vrOrigin.y;
   vrViewActive=true;
   }

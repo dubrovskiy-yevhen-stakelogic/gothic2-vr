@@ -12,7 +12,7 @@ shader=(root/'engine/shader/vr_pickup.frag').read_text()
 begin=shader.index('float pickupVisibility(');end=shader.index('\n}',begin)+2
 visibility=shader[begin:end].replace('clamp(pixelSlope,0.5,2.0)','std::clamp(pixelSlope,.5f,2.f)')
 window=(root/'engine/common/vr/vrwindow.cpp').read_text()
-start=window.index('  if(vrMenu.action==Vr::Menu::OpenGameInterface) {');end=window.index('\n  else if(vrMenu.action>=0)',start)
+start=window.index('  if(vrMenu.action==Vr::Menu::OpenGameMenu) {');end=window.index('\n  else if(vrMenu.action>=0)',start)
 open_inventory=window[start:end]
 fixture=r'''
 #include "vr/vrbowmath.h"
@@ -61,16 +61,20 @@ start=source.index('  int bow=-1,arrow=-1;');end=source.index('  if(allowed && s
 fixture+=source[start:end]+'\n}\nvoid sword(){\n'+block('if(!calibrationPreview && supportHand>=0 && swordMain>=0)')+'\n}\n};\n'
 fixture+=r'''
 struct Gothic {static Gothic& inst(){static Gothic g;return g;}Npc hero;bool hasPlayer=true;Npc* player(){return hasPlayer?&hero:nullptr;}
- enum class LoadState{Idle,Loading};LoadState checkLoading()const{return LoadState::Idle;}};
-struct KeyCodec {enum Action{Status=1};};
+ struct Camera {bool cutscene=false;bool isCutscene(){return cutscene;}} cam;Camera* camera(){return &cam;}
+ const char* menuMain(){return "MENU_MAIN";}
+ enum class LoadState{Idle,Loading};LoadState loading=LoadState::Idle;LoadState checkLoading()const{return loading;}};
+struct KeyCodec {enum Action{Status=1,Escape=2};};
 struct InventoryUiFixture {
  struct {int action=Menu::OpenGameInterface;} vrMenu;
  struct {int calls=0;void suspend(){++calls;}} vrGameplay;
  struct {bool active=false;bool isActive(){return active;}} dialogs;
- struct {bool active=true;std::string menu;int key=0;Npc* player=nullptr;void closeAll(){active=false;}void setMenu(const char* name,int k){menu=name;key=k;active=true;}void setPlayer(Npc& p){player=&p;}} rootMenu;
+ struct {bool active=false;bool isActive(){return active;}} video,chapter,document,console;
+ struct {bool active=true;std::string menu;int key=0;Npc* player=nullptr;bool isActive(){return active;}void closeAll(){active=false;}void setMenu(const char* name,int k){menu=name;key=k;active=true;}void setPlayer(Npc& p){player=&p;}void showVersion(bool){}} rootMenu;
  struct {int opens=0;bool active=false,wheel=false;bool isActive(){return active;}bool isWheelOpen(){return wheel;}void close(){active=wheel=false;}void open(Npc&){++opens;active=true;}} inventory;
  int cleared=0;void clearInput(){++cleared;}
  void open(){
+ auto& game=Gothic::inst();
 '''+open_inventory+r'''
  }
 };
@@ -80,6 +84,13 @@ float smoothstep(float a,float b,float x){float t=std::clamp((x-a)/(b-a),0.f,1.f
 '''+visibility+r'''
 int checks=0;void test(bool ok,const char* label){++checks;if(!ok){std::fprintf(stderr,"FAIL %s\n",label);std::exit(1);}}
 int main(){
+ InventoryUiFixture pause;pause.vrMenu.action=Menu::OpenGameMenu;pause.rootMenu.active=false;pause.inventory.active=true;pause.open();
+ test(pause.rootMenu.active && pause.rootMenu.menu=="MENU_MAIN" && pause.rootMenu.key==KeyCodec::Escape && !pause.inventory.active && pause.cleared==1,"game shortcut opens native pause menu and clears inventory/input");
+ pause.open();test(!pause.rootMenu.active,"game shortcut closes the native menu");
+ pause.dialogs.active=true;pause.open();test(!pause.rootMenu.active,"game shortcut does not interrupt dialogue");pause.dialogs.active=false;
+ Gothic::inst().cam.cutscene=true;pause.open();test(!pause.rootMenu.active,"game shortcut does not interrupt cutscene");Gothic::inst().cam.cutscene=false;
+ Gothic::inst().loading=Gothic::LoadState::Loading;pause.open();test(!pause.rootMenu.active,"game shortcut cannot open during loading");Gothic::inst().loading=Gothic::LoadState::Idle;
+ Gothic::inst().hasPlayer=false;pause.rootMenu.active=true;pause.open();test(pause.rootMenu.active,"game shortcut cannot dismiss title screen without a player");Gothic::inst().hasPlayer=true;
  InventoryUiFixture ui;ui.open();test(ui.inventory.active && ui.inventory.opens==1 && ui.cleared==1 && !ui.rootMenu.active,"game interface action opens inventory with native player");
  ui.open();test(ui.inventory.opens==1,"already open inventory is preserved");
  ui.inventory.wheel=true;ui.open();test(ui.inventory.active && !ui.inventory.wheel && ui.inventory.opens==2,"dedicated inventory action replaces the quick wheel with the full item list");

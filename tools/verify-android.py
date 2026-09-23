@@ -38,9 +38,10 @@ with zipfile.ZipFile(apk) as archive:
     checks["horizontal_string_controls_packaged"] = all(value in data for value in (b"String horizontal X", b"String horizontal Z"))
     checks["independent_string_anchor_packaged"] = b"Support XYZ moves the palm; String controls move the string" in data
     checks["global_trigger_help_packaged"] = b"Stick: scroll | LT/RT: -/+ | A: select | B: back" in data
+    checks["menu_shortcuts_help_packaged"] = b"L3 + R3: VR settings | Both grips + Y: game menu" in data
     checks["two_hand_damage_notice_packaged"] = b"Two-handed weapons deal damage only with a two-handed grip." in data
     checks["run_speed_setting_packaged"] = b"Running speed: < %.2fx >" in data and b"RunSpeed" in data
-    checks["first_run_welcome_packaged"] = all(t in data for t in (b"Welcome to Gothic II VR 0.1.1 Alpha", b"WelcomeSeen", b"https://discord.com/channels/747967102895390741/1543691482861408276"))
+    checks["first_run_welcome_packaged"] = all(t in data for t in (b"Welcome to Gothic II VR 0.2.0", b"WelcomeSeen", b"https://discord.com/channels/747967102895390741/1543691482861408276"))
     checks["release_defaults_packaged"] = b"WelcomeSeen=0" in data and b"ItemCal_DEFAULT_BOW_R=" in data and b"HolsterX2=-0.143947" in data
     checks["entry_contact_diagnostics_packaged"] = b"VR melee entry rejected weapon=" in data
     checks["holster_family_profiles_packaged"] = b"Bow held and holstered defaults saved" in data and b"Crossbow held and holstered defaults saved" in data

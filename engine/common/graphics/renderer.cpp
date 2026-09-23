@@ -978,7 +978,13 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
   if(!secondEye) drawShadowMap(pc, fId, wview);
   if(!secondEye && skyPlan.irradiance) prepareIrradiance(pc, wview);
   pc.setFramebuffer({});
-  if(prep!=nullptr && onPrepared) onPrepared();
+  if(prep!=nullptr && onPrepared) {
+    // InstanceStorage::commit uploads object patches on a worker. The prep
+    // buffer reads those patches, so its early submit needs the same upload
+    // join as the main buffer at the end of the world draw.
+    wview.postFrameupdate();
+    onPrepared();
+  }
 #if defined(__ANDROID__)
   // Fixed foveation (Performance -> Foveation): the density map is attached
   // only to passes that clear or discard their attachments (GBuffer, lighting,

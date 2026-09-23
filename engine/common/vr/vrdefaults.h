@@ -80,6 +80,7 @@ SnapAngle=30
 SmoothSpeed=90
 WelcomeSeen=0
 RunSpeed=1
+RunHold=0
 WorldScale=1
 RenderScale=1
 HudDistance=2.5

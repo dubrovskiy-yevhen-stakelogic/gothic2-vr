@@ -4530,7 +4530,7 @@ Npc::JumpStatus Npc::tryJump() {
   auto& g  = owner.script().guildVal();
   auto  gl = guild();
 
-  if(isSlide() || isSwim() || isDive()) {
+  if(isSlide() || ((isSwim() || isDive()) && !vrSwimCanClimb())) {
     JumpStatus ret;
     ret.anim   = Anim::Idle;
     return ret;

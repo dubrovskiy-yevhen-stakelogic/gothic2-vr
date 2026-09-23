@@ -1418,6 +1418,20 @@ void PlayerControl::implMove(uint64_t dt) {
   }
 
 void PlayerControl::implSwim(Npc& pl, uint64_t dt) {
+  if(pl.vrSwimming()) {
+    const bool jump=ctrl[Action::Jump];
+    pl.setDirection(controllerYaw);
+    if(jump && !swimJumpHeld && pl.vrSwimCanClimb()) {
+      const auto ledge=pl.tryJump();
+      if(!ledge.noClimb && ledge.anim!=Npc::Anim::Jump && pl.startClimb(ledge)) {
+        pl.setVrSwimInput({},0); swimJumpHeld=jump; return;
+      }
+    }
+    swimJumpHeld=jump; swimDiveStroke=false;
+    pl.setAnimRotate(0); pl.setRunAngle(0); runAngleDest=rotMouse=rotMouseY=0;
+    pl.setAnim(Npc::Anim::Idle);
+    return;
+  }
   const bool jump=ctrl[Action::Jump];
   if(!jump)
     swimDiveStroke=false;

@@ -320,6 +320,9 @@ class Npc final {
     void      excRoutine(size_t callback);
     void      multSpeed(float s);
     void      setVrLocomotionSpeed(float s);
+    void      setVrSwimInput(const Vr::SwimInput& in,float dt) { mvAlgo.setVrSwimInput(in,dt); }
+    bool      vrSwimming() const { return mvAlgo.vrSwimming(); }
+    bool      vrSwimCanClimb() const { return mvAlgo.vrSwimCanClimb(); }
 
     bool      testMove(const Tempest::Vec3& pos);
     bool      tryMove(const Tempest::Vec3& dp);

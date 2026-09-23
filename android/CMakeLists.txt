@@ -20,8 +20,8 @@ tempest_android_application(Gothic2VR
   NATIVE_SOURCE_DIR "${engine}"
   NATIVE_TARGET Gothic2Notr
   LIBRARY_NAME opengothic
-  VERSION_CODE 61
-  VERSION_NAME 0.1.1-alpha
+  VERSION_CODE 62
+  VERSION_NAME 0.2.0
   PROPERTY_PREFIX gothic2vr
   SIGNING_ENV_PREFIX GOTHIC2VR
   MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/AndroidManifest.xml"

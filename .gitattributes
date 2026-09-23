@@ -1,7 +1,8 @@
-* text=auto
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.ps1 text eol=crlf
+# Keep source hashes identical in Git checkouts and exported source archives.
+* text=auto eol=lf
+*.bat text eol=lf
+*.cmd text eol=lf
+*.ps1 text eol=lf
 *.sh text eol=lf
 *.png binary
 *.ttf binary

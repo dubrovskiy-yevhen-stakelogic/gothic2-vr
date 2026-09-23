@@ -25,6 +25,16 @@
 #include <fstream>
 using namespace Tempest;
 
+#if defined(GOTHIC2VR_MIRROR)
+static bool mirrorDisabledForTest() {
+  static const bool disabled=[] {
+    const char* value=std::getenv("GOTHIC2VR_NO_MIRROR_TEST");
+    return value && std::string_view(value)=="1";
+  }();
+  return disabled;
+}
+#endif
+
 // Adreno clock of a sampled frame (profiler CSV gpu_clock_mhz, ):
 // one pread of the kgsl node kept open (sysfs re-reads at offset 0); -1 = unreadable.
 // The kgsl node, <fcntl.h>/<unistd.h> and ssize_t are Android only; every other
@@ -64,13 +74,33 @@ bool MainWindow::tickVrMenu(const GamepadState& pad,uint64_t now) {
     return true;
   }
   Vr::Input in;
-  in.focused=QuestXr::inst().focused();
+  in.focused=pad.connected && QuestXr::inst().focused();
   in.leftGrip=(pad.buttons&GamepadState::L1)!=0; in.rightGrip=(pad.buttons&GamepadState::R1)!=0;
   in.menu=(pad.buttons&GamepadState::Start)!=0; in.a=(pad.buttons&GamepadState::A)!=0; in.b=(pad.buttons&GamepadState::B)!=0;
+  // The OpenXR adapter reports the physical left Y button as Select/View.
+  in.yButton=(pad.buttons&GamepadState::Select)!=0;
+  in.leftClick=(pad.buttons&GamepadState::L3)!=0; in.rightClick=(pad.buttons&GamepadState::R3)!=0;
   in.x=pad.leftStickX; in.y=pad.leftStickY; in.trigger=pad.rightTrigger; in.secondaryTrigger=pad.leftTrigger;
+  in.rightX=pad.rightStickX; in.rightY=pad.rightStickY;
   const bool before=vrMenu.visible;
   const bool consumed=vrMenu.update(in,now);
-  if(vrMenu.action==Vr::Menu::OpenGameInterface) {
+  if(vrMenu.action==Vr::Menu::OpenGameMenu) {
+    vrGameplay.suspend();
+    auto camera=game.camera();
+    if(auto player=game.player(); player && game.checkLoading()==Gothic::LoadState::Idle &&
+       !dialogs.isActive() && !video.isActive() && !chapter.isActive() && !document.isActive() &&
+       !console.isActive() && !(camera && camera->isCutscene())) {
+      if(inventory.isActive() || inventory.isWheelOpen()) inventory.close();
+      if(rootMenu.isActive()) rootMenu.closeAll();
+      else {
+        rootMenu.setMenu(game.menuMain(),KeyCodec::Escape);
+        rootMenu.showVersion(true);
+        rootMenu.setPlayer(*player);
+      }
+    }
+    clearInput();
+  }
+  else if(vrMenu.action==Vr::Menu::OpenGameInterface) {
     vrGameplay.suspend();
     if(auto player=Gothic::inst().player(); player && !dialogs.isActive()) {
       rootMenu.closeAll();
@@ -151,11 +181,12 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
     const int top=std::max(0,(h()-line*12)/2);
     p.setBrush(Color(.025f,.035f,.055f,.97f));p.drawRect(x,top,width,line*12);
     int y=top+line;
-    for(const char* row:{"Welcome to Gothic II VR 0.1.1 Alpha", "",
+    for(const char* row:{"Welcome to Gothic II VR 0.2.0", "",
         "This is a very early version of the VR mod.",
         "The game cannot yet be completed in VR.",
         "Many features are unfinished or do not work yet.",
-        "Expect bugs. Save often and keep backup saves.", "",
+        "Expect bugs. Save often and keep backup saves.",
+        "L3 + R3: VR settings | Both grips + Y: game menu",
         "Feedback and bug reports: Discord",
         "https://discord.com/channels/747967102895390741/1543691482861408276", "",
         "Press any button to continue. Moving the stick will not close this."}) {
@@ -181,7 +212,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
   }
   int y=line;
   if(vrMenu.visible) {
-    const int panelHeight=line*10;
+    const int panelHeight=line*11;
     const int top=std::max(0,int(float(h())*.61f)-panelHeight/2);
     p.setBrush(Color(0.025f,0.035f,0.055f,vrMenu.calibrationPage() || vrMenu.page==Vr::Menu::Page::Holsters?.50f:.94f)); p.drawRect(x,top,width,panelHeight);
     y=top+line; text(y,vrMenu.title()); y+=line;
@@ -232,6 +263,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
         case Vr::Menu::Turn: std::snprintf(value,sizeof(value),"Turning: < %s >",s.turn==Vr::TurnMode::Snap?"Snap":s.turn==Vr::TurnMode::Smooth?"Smooth":"Physical only"); break;
         case Vr::Menu::SnapAngle: std::snprintf(value,sizeof(value),"Snap angle: < %d degrees >",s.snapAngle); break;
         case Vr::Menu::SmoothSpeed: std::snprintf(value,sizeof(value),"Smooth speed: < %d deg/s >",s.smoothSpeed); break;
+        case Vr::Menu::RunMode: std::snprintf(value,sizeof(value),"Run button: < %s >",s.runHold?"Hold":"Toggle"); break;
         case Vr::Menu::RunSpeed: std::snprintf(value,sizeof(value),"Running speed: < %.2fx >",double(s.runSpeed)); break;
         case Vr::Menu::WorldScale: std::snprintf(value,sizeof(value),"World size: < %.2fx >",double(s.worldScale)); break;
         case Vr::Menu::RoomScale: std::snprintf(value,sizeof(value),"Room scale + collision: < %s >",s.roomScale?"On":"Off"); break;
@@ -247,6 +279,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
       text(y,value); y+=line;
     }
     text(y,vrSaveFailed?"Save failed":"Stick: scroll | LT/RT: -/+ | A: select | B: back"); y+=line;
+    text(y,"L3 + R3: VR settings | Both grips + Y: game menu"); y+=line;
     if(Application::tickCount()<vrGameplay.noticeUntil)text(y,vrGameplay.notice);
   }
   if(!vrMenu.visible && Application::tickCount()<vrGameplay.noticeUntil) {text(h()*2/3,vrGameplay.notice);}
@@ -605,15 +638,9 @@ void MainWindow::renderVr() {
   renderer.setVrLightDepth(vrMenu.settings.lightDepth);
   renderer.setVrMergedTransparency(vrMenu.settings.mergedTransparency);
 #if defined(GOTHIC2VR_MIRROR)
-  // The desktop mirror samples vrOutput, and only the copy route leaves an eye
-  // image there: the XR images the direct route renders into are created
-  // without VK_IMAGE_USAGE_SAMPLED_BIT and rest in COLOR_ATTACHMENT_OPTIMAL
-  // (QuestXr::createSwapchains, VulkanApi::borrowColorAttachment), so nothing
-  // may read them back. A mirror window therefore costs the direct-output fast
-  // path. That trade is right on a desktop GPU -- direct output exists to save
-  // Adreno tiler bandwidth, and one extra full-eye copy is cheap here -- and
-  // Gothic.ini [ENGINE] vrMirrorOff=1 hands the fast path back.
-  xr.setDirectOutput(vrMenu.settings.directOutput && !vrMirrorEnabled());
+  // The mirror samples vrOutput, so it requires the copy path. Direct XR images
+  // lack sampled-image usage. The diagnostic mirror toggle retains that path.
+  xr.setDirectOutput(vrMenu.settings.directOutput && !vrMirrorEnabled() && !mirrorDisabledForTest());
 #else
   xr.setDirectOutput(vrMenu.settings.directOutput);
 #endif
@@ -864,6 +891,8 @@ void MainWindow::renderVr() {
       for(const auto* img:{&uiLayer,&numOverlay}) { const auto b=img->bounds(); Vr::hudRectAdd(rect,b.x0,b.y0,b.x1,b.y1,hudShiftX,hudShiftY,int(w()),int(h())); }
     }
     { const auto b=overlay.bounds(); Vr::hudRectAdd(rect,b.x0,b.y0,b.x1,b.y1,0,0,int(w()),int(h())); }
+    // Use the same extent for the transparent clear, copy and composition quad.
+    rect=Vr::hudLayerRegion(rect,xr.width(),xr.height(),xr.stableHudExtent());
     vrProfiler.current.hudRect[0]=rect.w; vrProfiler.current.hudRect[1]=rect.h;
     frame.overlay=!rect.empty();
     xr.setHudRect(rect.x,rect.y,rect.w,rect.h);
@@ -937,9 +966,13 @@ void MainWindow::renderVr() {
 // also restores the direct-output fast path -- see the setDirectOutput call in
 // renderVr). The mirror is off on any build without a desktop window.
 bool MainWindow::vrMirrorEnabled() {
-  static const bool enabled=Gothic::settingsGetI("ENGINE","vrMirrorOff")==0;
+  static const bool enabled=Gothic::settingsGetI("ENGINE","vrMirrorOff")==0 && !mirrorDisabledForTest();
   static bool logged=false;
-  if(!logged) { Log::i("VR desktop mirror: ",enabled?"active (eye 0; direct output disabled while mirroring)":"off"); logged=true; }
+  if(!logged) {
+    Log::i("VR desktop mirror: ",enabled?"active (eye 0; direct output disabled while mirroring)":
+           mirrorDisabledForTest()?"off (comparison; XR copy path retained)":"off");
+    logged=true;
+  }
   return enabled;
   }
 
@@ -960,7 +993,7 @@ void MainWindow::drawVrMirror() {
   if(!Vr::Platform::mirrorVisible(hwnd())) return;
   try {
     vrMirrorFence.wait(); // the previous mirror, submitted a whole frame ago
-    const uint32_t srcW=uint32_t(w()),srcH=uint32_t(h());
+    const uint32_t srcW=vrOutput.w(),srcH=vrOutput.h();
     const uint32_t dstW=swapchain.w(),dstH=swapchain.h();
     if(srcW==0 || srcH==0 || dstW==0 || dstH==0) return;
     // shaders.downscale box-filters srcSize into the dstSize push constant and
@@ -996,8 +1029,15 @@ void MainWindow::presentVrMirror() {
   if(!vrMirrorDrawn) return;
   vrMirrorDrawn=false;
   try {
+    const double start=Vr::milliseconds();
     device.present(swapchain);
     vrMirrorPresented=Application::tickCount();
+    const double elapsed=Vr::milliseconds()-start;
+    static uint64_t lastSlowLog=0;
+    if(elapsed>4 && vrMirrorPresented-lastSlowLog>1000) {
+      Log::i("VR mirror present wait ms=",elapsed);
+      lastSlowLog=vrMirrorPresented;
+    }
     }
   catch(const Tempest::SwapchainSuboptimal&) {
     Log::e("VR mirror swapchain is outdated - reset");

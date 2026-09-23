@@ -82,10 +82,10 @@ def main():
         manifest = root / 'SOURCE-MANIFEST.json'
         if args.write_manifest and not errors:
             manifest.write_text(json.dumps({'schemaVersion': 1, 'version': version,
-                'files': records}, indent=2) + '\n', encoding='utf-8')
+                'files': records}, indent=2) + '\n', encoding='utf-8', newline='\n')
             all_hashes = records + [{'path': manifest.name, 'sha256': sha(manifest.read_bytes())}]
             (root / 'SOURCE-SHA256.txt').write_text(''.join(
-                f"{r['sha256']}  {r['path']}\n" for r in sorted(all_hashes, key=lambda r: r['path'])), encoding='utf-8')
+                f"{r['sha256']}  {r['path']}\n" for r in sorted(all_hashes, key=lambda r: r['path'])), encoding='utf-8', newline='\n')
         elif not args.write_manifest:
             expected = json.loads(manifest.read_text(encoding='utf-8'))
             if expected['version'] != version:

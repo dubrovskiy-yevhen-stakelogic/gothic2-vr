@@ -37,3 +37,7 @@ The APK includes the Khronos OpenXR loader; its [license and notices](licenses/O
 Source for the bundled OpenAL Soft version is included. Binary distributors
 must retain its notices and meet its applicable source/relinking requirements;
 the presence of the root MIT file does not remove those requirements.
+
+## GTA San Andreas VR Quest swimming
+
+`engine/common/vr/vrswimmotion.h` and the motion regression cases in `tests/swim-motion.cpp` are adapted from the GTA San Andreas VR Quest source kit (`native/src/SwimMotion.h` and `native/tests/swim_motion_test.cpp`). The stroke recognition, drag, support, gaze suppression, speed limit and waterline ceiling are retained. Gothic integration uses its own collision, water, climb and breath systems; GTA binary hooks and game assets are not included. Copyright (c) 2026 the GTA San Andreas VR Quest port contributors, MIT; see [license](licenses/GTA-SA-VR-swimming.txt).

@@ -44,11 +44,12 @@ struct Settings {
     if(reduced) { if(mapping==touchMapping) { mapping=wandMapping; reducedMapping=true; } }
     else if(reducedMapping) { if(mapping==wandMapping) mapping=touchMapping; reducedMapping=false; }
   }
-  static const char* mappingName(int id) {static const char* names[]={"None","Jump","Interact","Inventory","Journal","Crouch","Lock target","Walk","Draw / stow","Run (hold)"};return names[std::clamp(id,0,9)];}
+  static const char* mappingName(int id) {static const char* names[]={"None","Jump","Interact","Inventory","Journal","Crouch","Lock target","Walk","Draw / stow","Run"};return names[std::clamp(id,0,9)];}
   TurnMode turn=TurnMode::Snap;
   int snapAngle=30, smoothSpeed=90;
   bool welcomeSeen=false;
   float runSpeed=1;
+  bool runHold=false;
   float worldScale=1, renderScale=1, hudDistance=2, hudX=0, hudY=0;
   int fogMode=0, gpuSampling=1; // Mobile atmosphere / sampled GPU queries
   bool fastLighting=true, indexedObjects=true, batchedObjects=true, frameOverlap=true;
@@ -133,6 +134,7 @@ struct Settings {
       else if(key=="SmoothSpeed") smoothSpeed=int(n);
       else if(key=="WelcomeSeen") welcomeSeen=n!=0;
       else if(key=="RunSpeed") runSpeed=float(n);
+      else if(key=="RunHold") runHold=n!=0;
       else if(key=="WorldScale") worldScale=float(n);
       else if(key=="RenderScale") renderScale=float(n);
       else if(key=="HudDistance") hudDistance=float(n);
@@ -212,7 +214,7 @@ struct Settings {
     for(int i=0;i<4;++i) f<<"HolsterItem"<<i<<'='<<interaction.items[size_t(i)]<<"\nHolsterX"<<i<<'='<<interaction.offsets[size_t(i)].x<<"\nHolsterY"<<i<<'='<<interaction.offsets[size_t(i)].y<<"\nHolsterZ"<<i<<'='<<interaction.offsets[size_t(i)].z<<'\n';
 
     f<<"[VR]\nTurnMode="<<int(turn)<<"\nSnapAngle="<<snapAngle<<"\nSmoothSpeed="<<smoothSpeed
-     <<"\nWelcomeSeen="<<welcomeSeen<<"\nRunSpeed="<<runSpeed<<"\nWorldScale="<<worldScale<<"\nRenderScale="<<renderScale<<"\nHudDistance="<<hudDistance
+     <<"\nWelcomeSeen="<<welcomeSeen<<"\nRunSpeed="<<runSpeed<<"\nRunHold="<<runHold<<"\nWorldScale="<<worldScale<<"\nRenderScale="<<renderScale<<"\nHudDistance="<<hudDistance
      <<"\nHudX="<<hudX<<"\nHudY="<<hudY<<"\nFogMode="<<fogMode<<"\nGpuSampling="<<gpuSampling
      <<"\nFastLighting="<<fastLighting<<"\nIndexedObjects="<<indexedObjects<<"\nBatchedObjects="<<batchedObjects<<"\nFrameOverlap="<<frameOverlap
      <<"\nShadows="<<shadows<<"\nLighting="<<lighting<<"\nLocalLights="<<localLights
@@ -240,12 +242,14 @@ struct Settings {
 };
 struct Input {
   bool focused=false,leftGrip=false,rightGrip=false,menu=false,a=false,b=false;
+  bool yButton=false,leftClick=false,rightClick=false;
   float x=0,y=0,trigger=0,secondaryTrigger=0;
+  float rightX=0,rightY=0;
 };
 class Menu {
   public:
     enum Row { Turn,SnapAngle,SmoothSpeed,WorldScale,RoomScale,HeadMovement,HidePlayer,RenderScale,HudDistance,Profiler,Recenter,Close,
-               Locomotion,Hud,Performance,HudX,HudY,HudReset,FogMode,GpuSampling,Back,FastLighting,IndexedObjects,RenderTests,Shadows,Lighting,LocalLights,FrameOverlap,TiledLights,SubgroupTiles,UniformLights,StereoSeed,FramePipeline,BatchedObjects,CpuStaging,LightDepth,MergedTransparency,DirectOutput,SlabLights,ObjectDistance,Holsters,Cheats,CheatPlayer,CheatEnemies,CheatItems,CheatWorld,Hands,HolsterEnabled,HolsterModels,HolsterPoint,HolsterItem,HolsterX,HolsterY,HolsterZ,HolsterRadius,PickupRadius,PhysicalCombat,SwingSpeed,HolsterReset,GodMode,Heal,EnemyCategory,EnemySelect,EnemySpawn,ItemCategory,ItemSelect,ItemQuantity,ItemGive,TimeHour,TimeApply,WeatherMode,WeatherApply,Controls,ItemCalibrationMenu,MapA,MapB,MapX,MapY,MapL3,MapR3,MapReset,CalHand,CalItem,CalX,CalY,CalZ,CalPitch,CalYaw,CalRoll,CalReset,ItemSwords,ItemTwoHanded,ItemBows,ItemCrossbows,ItemPotions,ItemAmmo,ItemArmor,ItemMagic,ItemOther,ItemAll,EnemyAnimals,EnemyGoblins,EnemyOrcs,EnemyUndead,EnemyGolems,EnemyMonsters,EnemyPeople,EnemyAll,HorizonHaze,EarlyLeftEye,Horizon,Power,CpuLevel,GpuLevel,TerrainLod,Foveation,HolsterAtLeft,HolsterAtRight,CalModel,CalAim,CalSupport,CalHolstered,CalStep,CalGrip,CalFlip,CalCopyHand,CalAimX,CalAimY,CalAimZ,CalAimPitch,CalAimYaw,CalAimRoll,CalAimReset,CalSupX,CalSupY,CalSupZ,CalSupPitch,CalSupYaw,CalSupRoll,CalSupReset,CalHolX,CalHolY,CalHolZ,CalHolPitch,CalHolYaw,CalHolRoll,CalHolReset,CalUseDefault,GripLock,PickupHighlight,CalBow,CalBowString,CalArrow,StaticLighting,CalScale,CalStringHeight,CalStringCenter,PickupHighlightRange,BowSight,IgnoreWeaponRequirements,HolsterSlot0,HolsterSlot1,HolsterSlot2,HolsterSlot3,HolsterMoveTarget,HolsterMove,HolsterClear,HolsterDrop,OpenGameInterface,CalStringSide,CalStringDepth,CalUseBowDefault,CalUseCrossbowDefault,RunSpeed,OpenCharacterStats };
+               Locomotion,Hud,Performance,HudX,HudY,HudReset,FogMode,GpuSampling,Back,FastLighting,IndexedObjects,RenderTests,Shadows,Lighting,LocalLights,FrameOverlap,TiledLights,SubgroupTiles,UniformLights,StereoSeed,FramePipeline,BatchedObjects,CpuStaging,LightDepth,MergedTransparency,DirectOutput,SlabLights,ObjectDistance,Holsters,Cheats,CheatPlayer,CheatEnemies,CheatItems,CheatWorld,Hands,HolsterEnabled,HolsterModels,HolsterPoint,HolsterItem,HolsterX,HolsterY,HolsterZ,HolsterRadius,PickupRadius,PhysicalCombat,SwingSpeed,HolsterReset,GodMode,Heal,EnemyCategory,EnemySelect,EnemySpawn,ItemCategory,ItemSelect,ItemQuantity,ItemGive,TimeHour,TimeApply,WeatherMode,WeatherApply,Controls,ItemCalibrationMenu,MapA,MapB,MapX,MapY,MapL3,MapR3,MapReset,CalHand,CalItem,CalX,CalY,CalZ,CalPitch,CalYaw,CalRoll,CalReset,ItemSwords,ItemTwoHanded,ItemBows,ItemCrossbows,ItemPotions,ItemAmmo,ItemArmor,ItemMagic,ItemOther,ItemAll,EnemyAnimals,EnemyGoblins,EnemyOrcs,EnemyUndead,EnemyGolems,EnemyMonsters,EnemyPeople,EnemyAll,HorizonHaze,EarlyLeftEye,Horizon,Power,CpuLevel,GpuLevel,TerrainLod,Foveation,HolsterAtLeft,HolsterAtRight,CalModel,CalAim,CalSupport,CalHolstered,CalStep,CalGrip,CalFlip,CalCopyHand,CalAimX,CalAimY,CalAimZ,CalAimPitch,CalAimYaw,CalAimRoll,CalAimReset,CalSupX,CalSupY,CalSupZ,CalSupPitch,CalSupYaw,CalSupRoll,CalSupReset,CalHolX,CalHolY,CalHolZ,CalHolPitch,CalHolYaw,CalHolRoll,CalHolReset,CalUseDefault,GripLock,PickupHighlight,CalBow,CalBowString,CalArrow,StaticLighting,CalScale,CalStringHeight,CalStringCenter,PickupHighlightRange,BowSight,IgnoreWeaponRequirements,HolsterSlot0,HolsterSlot1,HolsterSlot2,HolsterSlot3,HolsterMoveTarget,HolsterMove,HolsterClear,HolsterDrop,OpenGameInterface,CalStringSide,CalStringDepth,CalUseBowDefault,CalUseCrossbowDefault,RunSpeed,OpenCharacterStats,OpenGameMenu,RunMode };
     enum class Page { Main,Locomotion,Hud,Performance,RenderTests,Holsters,Cheats,CheatPlayer,CheatEnemies,CheatItems,CheatWorld,ItemList,Controls,Calibration,EnemyList,Power,CalibrationHome,Aim,Support,Holstered,HolsterSlot };
     static const char* performanceLevelName(int level) {
       switch(level) { case 1: return "Power savings"; case 2: return "Sustained low"; case 3: return "Sustained high"; case 4: return "Boost"; default: return "Runtime default"; }
@@ -263,7 +267,7 @@ class Menu {
     }
     bool toggleRow() const {
       switch(row()) {
-        case RoomScale:case HeadMovement:case HidePlayer:case FogMode:case FastLighting:case IndexedObjects:
+        case RunMode:case RoomScale:case HeadMovement:case HidePlayer:case FogMode:case FastLighting:case IndexedObjects:
         case BatchedObjects:case HorizonHaze:case EarlyLeftEye:case StaticLighting:case Shadows:case Lighting:
         case LocalLights:case FrameOverlap:case TiledLights:case SubgroupTiles:case UniformLights:case StereoSeed:
         case FramePipeline:case CpuStaging:case LightDepth:case MergedTransparency:case DirectOutput:case SlabLights:
@@ -279,7 +283,7 @@ class Menu {
         case HolsterX:case HolsterY:case HolsterZ:case HolsterRadius:case PickupRadius:case SwingSpeed:
         case MapA:case MapB:case MapX:case MapY:case MapL3:case MapR3:
         case EnemyCategory:case EnemySelect:case ItemCategory:case ItemSelect:case ItemQuantity:case TimeHour:case WeatherMode:
-        case RunSpeed:case Turn:case SnapAngle:case SmoothSpeed:case WorldScale:case RoomScale:case HeadMovement:
+        case RunMode:case RunSpeed:case Turn:case SnapAngle:case SmoothSpeed:case WorldScale:case RoomScale:case HeadMovement:
         case HidePlayer:case RenderScale:case HudDistance:case HudX:case HudY:case Profiler:case FogMode:case GpuSampling:
         case FastLighting:case IndexedObjects:case BatchedObjects:case ObjectDistance:case HorizonHaze:case EarlyLeftEye:
         case Horizon:case CpuLevel:case GpuLevel:case TerrainLod:case Foveation:case StaticLighting:
@@ -293,7 +297,7 @@ class Menu {
     bool interactionPreview(bool focused) const { return visible && focused; }
     std::span<const Row> rows() const {
       static constexpr Row main[]={Locomotion,Hud,Performance,Recenter,Holsters,Cheats,Controls,ItemCalibrationMenu,OpenGameInterface,OpenCharacterStats,Close};
-      static constexpr Row locomotion[]={Turn,SnapAngle,SmoothSpeed,WorldScale,RoomScale,HeadMovement,RunSpeed,Back};
+      static constexpr Row locomotion[]={Turn,SnapAngle,SmoothSpeed,WorldScale,RoomScale,HeadMovement,RunSpeed,RunMode,Back};
       static constexpr Row hud[]={PickupHighlight,PickupHighlightRange,BowSight,HudDistance,HudX,HudY,HudReset,HidePlayer,Back};
       static constexpr Row performance[]={RenderScale,FogMode,Profiler,GpuSampling,FastLighting,IndexedObjects,BatchedObjects,ObjectDistance,RenderTests,DirectOutput,HorizonHaze,EarlyLeftEye,Horizon,Power,TerrainLod,Foveation,StaticLighting,Back};
       static constexpr Row power[]={CpuLevel,GpuLevel,Back};
@@ -365,16 +369,25 @@ class Menu {
     }
     bool update(const Input& in,uint64_t now) {
       changed=false; recenter=false; action=-1; actionDirection=0;
-      if(!in.focused) { gate=true; chordDown=true; neutral=false; return true; }
-      const bool chord=in.leftGrip && in.rightGrip && in.menu;
+      if(!in.focused) { gate=true; chordDown=true; gameChordDown=true; neutral=false; return true; }
+      const bool chord=(in.leftClick && in.rightClick) || (in.leftGrip && in.rightGrip && in.menu);
+      const bool gameChord=in.leftGrip && in.rightGrip && in.yButton;
       if(!chord) chordDown=false;
-      if(chord && !chordDown) {
-        chordDown=true; visible=!visible; page=Page::Main; selected=0; gate=true; neutral=false;
-      }
+      if(!gameChord) gameChordDown=false;
       if(gate) {
-        if(!in.menu && !in.a && !in.b && in.trigger<0.2f && in.secondaryTrigger<0.2f && std::abs(in.x)<0.25f && std::abs(in.y)<0.25f) {
+        if(!in.menu && !in.a && !in.b && !in.yButton && !in.leftClick && !in.rightClick &&
+           in.trigger<0.2f && in.secondaryTrigger<0.2f && std::abs(in.x)<0.25f && std::abs(in.y)<0.25f &&
+           std::abs(in.rightX)<0.25f && std::abs(in.rightY)<0.25f) {
           gate=false; lastA=lastB=lastTrigger=false; axis=0; neutral=true;
         }
+        return true;
+      }
+      if(chord && !chordDown) {
+        chordDown=true; visible=!visible; page=Page::Main; selected=0; gate=true; neutral=false;
+        return true;
+      }
+      if(gameChord && !gameChordDown) {
+        gameChordDown=true; visible=false; action=OpenGameMenu; gate=true; neutral=false;
         return true;
       }
       const bool triggerEdit=visible && valueRow();
@@ -387,7 +400,7 @@ class Menu {
       const int triggerDirection=int(in.trigger>.55f)-int(in.secondaryTrigger>.55f);
       // Freeze selection while a trigger is held, including its release hysteresis.
       const int next=triggerHeld ? (triggerEdit?2*triggerDirection:0) :
-        std::abs(in.y)>0.6f ? (in.y>0?1:-1) : std::abs(in.x)>0.6f ? (in.x>0?2:-2):0;
+        std::abs(in.y)>0.6f ? (in.y>0?1:-1) : 0;
       if(next==0) { axis=0; neutral=true; }
       if(neutral && next!=0 && (axis!=next || (now>=repeatAt && !(triggerHeld && toggleRow())))) {
         const bool first=axis!=next; axis=next; repeatAt=now+(first?400u:160u);
@@ -398,7 +411,7 @@ class Menu {
       return true;
     }
   private:
-    bool chordDown=false,gate=true,neutral=false,lastA=false,lastB=false,lastTrigger=false;
+    bool chordDown=false,gameChordDown=false,gate=true,neutral=false,lastA=false,lastB=false,lastTrigger=false;
     int axis=0; uint64_t repeatAt=0;
     void open(Page next) { page=next; selected=0; gate=true; }
     void goBack() {
@@ -417,6 +430,7 @@ class Menu {
       const Row selectedRow=row();
       if(!activated && (selectedRow==CalUseBowDefault || selectedRow==CalUseCrossbowDefault || selectedRow==OpenGameInterface || selectedRow==OpenCharacterStats || selectedRow==HolsterMove || selectedRow==HolsterClear || selectedRow==HolsterDrop || selectedRow==HolsterAtLeft || selectedRow==HolsterAtRight || selectedRow==EnemySpawn || selectedRow==ItemGive || selectedRow==Heal || selectedRow==TimeApply || selectedRow==WeatherApply)) return;
       switch(selectedRow) {
+        case OpenGameMenu:action=OpenGameMenu;visible=false;gate=true;return;
         case OpenGameInterface:action=OpenGameInterface;visible=false;gate=true;return;
         case OpenCharacterStats:action=OpenCharacterStats;visible=false;gate=true;return;
         case HolsterSlot0:case HolsterSlot1:case HolsterSlot2:case HolsterSlot3:
@@ -492,6 +506,7 @@ class Menu {
         case Turn: settings.turn=TurnMode((int(settings.turn)+3+direction)%3); break;
         case SnapAngle: settings.snapAngle+=direction*15; break;
         case SmoothSpeed: settings.smoothSpeed+=direction*15; break;
+        case RunMode: settings.runHold=!settings.runHold; break;
         case RunSpeed: settings.runSpeed+=float(direction)*.05f; break;
         case WorldScale: settings.worldScale+=float(direction)*0.05f; recenter=true; break;
         case RoomScale: settings.roomScale=!settings.roomScale; recenter=true; break;

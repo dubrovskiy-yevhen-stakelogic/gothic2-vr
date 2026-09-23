@@ -127,16 +127,16 @@ struct {struct {std::array<int,6> mapping={0,0,0,0,9,0};}settings;}vrMenu;
 bool held(uint32_t buttons){GamepadState gp;gp.buttons=buttons;bool vrRunning=true;
 '''
 s = source('gamepad.cpp')
-start = s.index('  vrRunning=false;\n  const uint32_t runButtons[]')
-end = s.index('  // Native WM_Walk', start)
+start = s.index('  const uint32_t runButtons[]')
+end = s.index('  struct InputGuard', start)
 fixture += s[start:end]
 fixture += r'''
- return vrRunning;
+ return runDown;
 }
-void run(){test(!held(0),"run cannot latch from prior state");test(held(GamepadState::L3),"L3 held runs");
- test(!held(0),"L3 release returns to walking immediately");test(!held(GamepadState::R3),"crouch does not run");
+void run(){test(!held(0),"no run button when released");test(held(GamepadState::L3),"L3 held runs");
+ test(!held(0),"released raw button is false");test(!held(GamepadState::R3),"crouch does not run");
  vrMenu.settings.mapping[4]=0;vrMenu.settings.mapping[5]=9;
- test(held(GamepadState::R3) && !held(GamepadState::L3),"custom run mapping retains hold semantics");}
+ test(held(GamepadState::R3) && !held(GamepadState::L3),"custom run mapping reads its assigned button");}
 }
 namespace returnTest {
 struct Item {bool live=true;};struct Focus {Item* item=nullptr;};

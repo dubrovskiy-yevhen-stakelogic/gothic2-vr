@@ -377,6 +377,14 @@ void MainWindow::paintEvent(PaintEvent& event) {
 
 void MainWindow::resizeEvent(SizeEvent&) {
 #if defined(GOTHIC2VR_OPENXR)
+  const int eyeWidth=int(QuestXr::inst().width()), eyeHeight=int(QuestXr::inst().height());
+  // WM_SIZE changes the Widget before this callback. Restore the logical UI
+  // size without resizing the native mirror window. The nested callback resets
+  // its swapchain once, after the Widget has the final headset dimensions.
+  if(w()!=eyeWidth || h()!=eyeHeight) {
+    Widget::resize(eyeWidth,eyeHeight);
+    return;
+  }
   // The viewport follows the headset, never the desktop window: every render
   // target is sized from QuestXr. Only the mirror swapchain tracks the window.
   if(auto camera=Gothic::inst().camera())
@@ -1388,8 +1396,9 @@ void MainWindow::tickCamera(uint64_t dt) {
     else if(inventory.isActive()) {
       camera.setTarget(pos);
       }
-#if defined(__ANDROID__)
-    // Both Android input paths own camera yaw; do not overwrite touch look with character facing.
+#if defined(GOTHIC2VR_OPENXR) || defined(__ANDROID__)
+    // OpenXR and Android touch input own camera yaw. Following character facing
+    // here feeds head-relative movement back into the VR view every frame.
     else if(pl!=nullptr && pl->interactive()==nullptr && !pl->isDown()) {
       camera.setTarget(pos);
       }
@@ -1652,6 +1661,10 @@ void MainWindow::setGameImpl(std::unique_ptr<GameSession> &&w) {
 
 void MainWindow::clearInput() {
   player.clearInput();
+#if defined(GOTHIC2VR_OPENXR)
+  vrRunning=vrRunButton.update(true,false,vrMenu.settings.runHold);
+  if(auto pl=Gothic::inst().player())pl->setVrSwimInput({},0);
+#endif
   std::memset(mouseP,0,sizeof(mouseP));
   }
 

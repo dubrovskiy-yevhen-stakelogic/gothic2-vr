@@ -19,8 +19,15 @@ Release version: 0.2.1. VRS defaults to Low when no preference is saved. Existin
 
 Hold Menu or press L3 + R3 to open VR settings. Both grips + Y opens the game menu. R3 cycles cutscene modes while a cutscene is active. See [CONTROLS.md](CONTROLS.md).
 
-## Windows PCVR and Windows 7
+## Windows PCVR
 
-PCVR sources and runtime launchers are included in the source archive; [BUILDING.md](BUILDING.md) describes the Windows build. This release package does not contain a newly built PCVR executable.
+1. Extract **Gothic-II-VR-0.2.1-PCVR.zip**, or open `PCVR` in the combined **Player.zip**.
+2. Install the Microsoft Visual C++ 2015-2022 x64 runtime and an up-to-date Vulkan-capable graphics driver.
+3. Connect the headset and open the appropriate launcher: **START-STEAMVR.cmd** for SteamVR / Steam Link, **START-OCULUS.cmd** for Meta Quest Link / Air Link, or **START-VIRTUAL-DESKTOP.cmd** for Virtual Desktop with VDXR. **START-PCVR.cmd** uses the active OpenXR runtime.
+4. Select the installed Gothic II Gold / Night of the Raven folder containing `Data` and `System` when prompted.
+
+For an update, close the game and replace the supplied program files. Keep existing saves, `VR.ini` and the purchased game installation. Game data is not included. Windows 10/11 x64 is required.
+
+## Windows 7
 
 The separate Windows 7 compatibility workflow is documented in [WINDOWS7.md](WINDOWS7.md). Its device acceptance remains limited; it does not add PCVR support to Windows 7.

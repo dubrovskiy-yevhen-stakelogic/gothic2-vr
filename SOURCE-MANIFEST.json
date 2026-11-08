@@ -59,13 +59,13 @@
     },
     {
       "path": "BUILDING.md",
-      "sha256": "320bd358f0322c9b1e16dcc20e55b8f44b6cb8b8e4493936914adfed4a9ff85b",
-      "bytes": 10916
+      "sha256": "3a615d99658e02a44ca7d46ce5c65b9fe81da156a3782535b74f677d1b8fe3cd",
+      "bytes": 10908
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "7399a2028e6dd7e4a0994ac6135737d539fa1812075ab40db3a1dc6e8af37368",
-      "bytes": 5015
+      "sha256": "29b1638a72f974cafd7b012b7a85713bf0d5f39316204dd26f1bd0584afcf787",
+      "bytes": 5218
     },
     {
       "path": "config/android-toolchain.lock.json",
@@ -19684,8 +19684,8 @@
     },
     {
       "path": "INSTALL.md",
-      "sha256": "aab26b4787b150ca954dcc0309c2383b3c82754b123aea9cc1b5196be18246e7",
-      "bytes": 1787
+      "sha256": "0f4dc9c6ef0ca965561e11bcaeb4f48a56ce3e0570b4b995c0275e695009e65d",
+      "bytes": 2380
     },
     {
       "path": "KNOWN_ISSUES.md",
@@ -19696,6 +19696,21 @@
       "path": "LICENSE",
       "sha256": "8b06f1e0cd3ceaa9018337bb05fb9199e59959c2f3e97c7757a3436c7da7f492",
       "bytes": 1059
+    },
+    {
+      "path": "licenses/DXC-LICENSE-LLVM.txt",
+      "sha256": "729615317e28dd03907e46f0fc3b5e88f7853cee61d1a1471d2749335516b46f",
+      "bytes": 1979
+    },
+    {
+      "path": "licenses/DXC-LICENSE-MIT.txt",
+      "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c",
+      "bytes": 1093
+    },
+    {
+      "path": "licenses/DXC-LICENSE-MS.txt",
+      "sha256": "734f72f239fe7b07b4c7203f294c1a7ce27095687278bab7e56d630d7c672963",
+      "bytes": 13163
     },
     {
       "path": "licenses/GTA-SA-VR-swimming.txt",
@@ -19779,13 +19794,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "5fd82ef04b0df19eb01ee805d729c5821a31e65aa35a30f93beed088c968fc98",
-      "bytes": 2639
+      "sha256": "84d1544c57c0b714abf27b0234af1a06b5f77b6b7dc2aa43d279fae292b4a292",
+      "bytes": 2948
     },
     {
       "path": "RELEASE-NOTES.md",
-      "sha256": "257306497577853932c7bd019bc5b47d7a2b843694f253676fb869e725328ef4",
-      "bytes": 2015
+      "sha256": "aea79d5cc55758e307a6245e2132869a1d43c5281b896d6e699679037ef15cd2",
+      "bytes": 2218
     },
     {
       "path": "RELEASE_REVIEW.md",
@@ -19974,8 +19989,8 @@
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "40425780897d50db308909eac5491547db893eee7579fa3f9b95408d91a404a6",
-      "bytes": 4389
+      "sha256": "f45e9f19aeed5370ffbd5bbb0f8e501909fe2b937808472fefcb3a1d596ccf2b",
+      "bytes": 4728
     },
     {
       "path": "tools/audit-source-kit.ps1",

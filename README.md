@@ -2,7 +2,7 @@
 
 [Install](INSTALL.md) | [Controls](CONTROLS.md) | [Changelog](CHANGELOG.md) | [Build from source](BUILDING.md) | [Limitations](KNOWN_ISSUES.md)
 
-Gothic II: Night of the Raven in VR, with tracked hands, physical combat and stereoscopic rendering. The standalone build runs on Meta Quest. Windows PCVR sources and OpenXR launchers are included in the source kit.
+Gothic II: Night of the Raven in VR, with tracked hands, physical combat and stereoscopic rendering. The standalone build runs on Meta Quest. Windows PCVR runs through OpenXR with SteamVR, Meta Quest Link / Air Link or Virtual Desktop.
 
 This is an early alpha. Full-game completion is not supported yet; keep several save slots.
 
@@ -22,10 +22,12 @@ Positional head tracking, room-scale collision, tracked hands, melee combat, bow
 
 ## Packages
 
+- **Gothic-II-VR-0.2.1-PCVR.zip**: Windows x64 executable, runtime DLLs and OpenXR launchers. Extract and run the launcher for your headset connection.
+- **Gothic-II-VR-0.2.1-Player.zip**: both platforms in separate `PCVR` and `Quest` folders.
 - **Gothic-II-VR-0.2.1-Quest.zip**: APK and Windows installation/update scripts. Extract the complete archive and run **INSTALL.bat** for a new installation or **UPDATE.bat** for an APK-only update.
 - **Gothic-II-VR-0.2.1-Source.zip**: engine, rendering backend, shaders, tests, Quest build/install tools, PCVR launchers, licenses and checksums. External build dependencies have pinned download URLs and hashes.
 
-An owned Gothic II Gold / Night of the Raven installation is required. Retail game files, saves and personal settings are excluded. The standard installer supports Windows 10/11. See [WINDOWS7.md](WINDOWS7.md) for the separate compatibility workflow. No new PCVR binary is included in these packages; see [BUILDING.md](BUILDING.md) for the Windows build.
+An owned Gothic II Gold / Night of the Raven installation is required. Retail game files, saves and personal settings are excluded. The standard installer supports Windows 10/11. See [WINDOWS7.md](WINDOWS7.md) for the separate compatibility workflow. PCVR requires Windows 10/11 x64, a Vulkan-capable graphics driver, the Microsoft Visual C++ 2015-2022 x64 runtime and an installed OpenXR runtime.
 
 ## Credits
 

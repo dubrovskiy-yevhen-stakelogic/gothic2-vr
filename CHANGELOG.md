@@ -25,6 +25,10 @@
 
 - Magic is currently not working. This is a known issue; a fix is planned for a future update, with no release date yet.
 
+## Packages
+
+- Standalone Quest and Windows PCVR builds, available separately or together in the Player archive. PCVR includes launchers for SteamVR, Meta Quest Link / Air Link and Virtual Desktop.
+
 ## Compatibility
 
 - Existing saves and settings are retained when updating.

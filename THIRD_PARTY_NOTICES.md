@@ -41,3 +41,7 @@ the presence of the root MIT file does not remove those requirements.
 ## GTA San Andreas VR Quest swimming
 
 `engine/common/vr/vrswimmotion.h` and the motion regression cases in `tests/swim-motion.cpp` are adapted from the GTA San Andreas VR Quest source kit (`native/src/SwimMotion.h` and `native/tests/swim_motion_test.cpp`). The stroke recognition, drag, support, gaze suppression, speed limit and waterline ceiling are retained. Gothic integration uses its own collision, water, climb and breath systems; GTA binary hooks and game assets are not included. Copyright (c) 2026 the GTA San Andreas VR Quest port contributors, MIT; see [license](licenses/GTA-SA-VR-swimming.txt).
+
+## Windows shader compiler
+
+The PCVR package includes Microsoft DirectX Shader Compiler (`dxcompiler.dll`), required by Tempest. Its [LLVM license](licenses/DXC-LICENSE-LLVM.txt), [MIT license](licenses/DXC-LICENSE-MIT.txt) and [Microsoft notices](licenses/DXC-LICENSE-MS.txt) are included.

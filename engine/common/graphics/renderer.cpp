@@ -2,6 +2,8 @@
 #include "vr/vrstereohiz.h"
 
 #include "vr/vrfoveation.h"
+#include "vr/vrratemap.h"
+#include "vr/vrtaa.h"
 
 #include <Tempest/Color>
 #include <Tempest/Fence>
@@ -137,13 +139,13 @@ void Renderer::setupSettings() {
     // Render scale < 1 as a projection-layer sub-rectangle;
     // vrScaleRectOff=1 restores the Lanczos upscale into the whole eye image.
     vrScaleRect   = Gothic::settingsGetI("ENGINE","vrScaleRectOff")==0;
-    // Stereo HiZ (0.0.42-0.0.44) measured worse than the seed draw on the Quest
-    // (captures 042-044: weaker culling in dense areas, right eye +0.6 ms); opt-in.
+    // Stereo HiZ measured worse than the seed draw on the Quest
+    // (weaker culling in dense areas, right eye +0.6 ms); opt-in.
     vrStereoHiZ   = Gothic::settingsGetI("ENGINE","vrStereoHiZ")!=0;
     vrStashHalf   = Gothic::settingsGetI("ENGINE","vrStashHalfOff")==0;
     // Static shadow map on demand with balanced slices;
     // vrShadowOnDemandOff=1 restores the always-cycling slicer with raw
-    // cluster ranges (0.0.34-0.0.47). Optional: vrShadowRebuildMove (cm),
+    // cluster ranges. Optional: vrShadowRebuildMove (cm),
     // vrShadowRebuildSeconds, vrShadowMovedCasterOff=1.
     vrShadowSlicer.onDemand = Gothic::settingsGetI("ENGINE","vrShadowOnDemandOff")==0;
     vrShadowBalanced        = vrShadowSlicer.onDemand;
@@ -826,8 +828,8 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
     // Render scale < 1: tonemap the internal size into the
     // top-left rectangle of the eye image; the projection layer's imageRect is
     // that rectangle (vrwindow -> QuestXr::setEyeRect, the same vrEyeRect()).
-    // Capture 025: the upscale pass cost +0.93 ms per pair at 0.7 and the lost
-    // fog fold 0.3 ms per eye (capture 040). Scale 1: the old path, unchanged.
+    // The upscale pass cost +0.93 ms per pair at 0.7 and the lost
+    // fog fold 0.3 ms per eye. Scale 1: the old path, unchanged.
     const auto rect   = vrEyeRect(result.size());
     vrScaleRectActive = rect!=result.size();
     if(!vrScaleRectLogged) {
@@ -852,6 +854,12 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
     prepareLightsBvh(cmd, wview);
 
   updateCamera(wview, camera,shadowCamera);
+  vrVrsEye=secondEye?1:0;
+  if(!secondEye) ++vrTaaFrame;
+  vrTaaEye=secondEye?1:0;
+  vrTaaActive=vrTaa && eyeTarget && !settings.aaEnabled;
+  vrTaaViewProjection=camera.viewProjLwc(); vrTaaProjection=camera.projective(); vrTaaOrigin=camera.originLwc();
+  if(!vrTaaActive) for(auto& e:vrTaaEyes) e.valid=false;
 
 #if defined(__ANDROID__)
   prepareVrShadow(wview, shadowCamera ? *shadowCamera : camera, secondEye);
@@ -905,8 +913,7 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
     static const float lodNear[4] = {0.f, 20000.f, 12000.f, 8000.f};
     wview.setVrTerrainLod(wview.landscape().lodLevels()>=2 ? lodNear[std::clamp(vrTerrainLod,0,3)] : 0.f);
     // Stereo HiZ: the second eye builds its HiZ from the first eye's final
-    // depth (0.0.42) but still draws the first eye's occluder seed: capture
-    // 043 showed the seed draw doubles as the GBuffer's depth pre-pass (right
+    // depth but still draws the first eye's occluder seed. The seed draw doubles as the GBuffer's depth pre-pass (right
     // GBuffer 1.26 -> 2.14 ms without it, at equal visible meshlet counts).
     vrStereoHiZActive = vrStereoHiZ && !shaders.hiZStereo.isEmpty() && !hiz.hiZLeft.isEmpty();
     wview.setVrSeedNextEye(!secondEye && vrStereoSeed);
@@ -989,7 +996,7 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
   // Fixed foveation (Performance -> Foveation): the density map is attached
   // only to passes that clear or discard their attachments (GBuffer, lighting,
   // stash, tonemapping). Passes that load an existing image (water, fog
-  // composite) run without it: 0.0.28 showed black bands there.
+  // composite) run without it: loading existing attachments with foveation caused black bands.
   prepareVrFoveation(cmd, uint32_t(sceneLinear.w()), uint32_t(sceneLinear.h()));
 #endif
   drawGBuffer(cmd, fId, wview);
@@ -1032,7 +1039,7 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
   cmd.setFramebuffer({});
   cmd.setDebugMarker(vrLighting ? "Lighting+Sky" : "Unlit+Sky");
   if(vrLighting && vrDiagnostics) {
-    // Diagnostic frames (capture 045: the first eye's direct light costs
+    // Diagnostic frames (the first eye's direct light costs
     // ~0.65 ms more than the second eye's indoors, in every capture since
     // 009): an empty pass first absorbs any wait on earlier work, then the
     // direct light is timed alone.
@@ -1163,26 +1170,89 @@ void Renderer::draw(Tempest::Attachment& result, Encoder<CommandBuffer>& cmd, ui
   }
 
 void Renderer::prepareVrFoveation(Encoder<CommandBuffer>& cmd, uint32_t w, uint32_t h) {
-  auto& device = Resources::device();
-  const auto& fd = device.properties().fragmentDensity;
-  if(!vrFdmLogged) {
-    vrFdmLogged = true;
-    Log::i("VR foveation: fragment density map ", fd.supported ? "supported" : "unsupported", " texel ", fd.minTexel, "-", fd.maxTexel, " px");
-    }
-  const int level = fd.supported ? std::clamp(vrFoveation,0,3) : 0;
-  if(level!=vrFdmLevel || w!=vrFdmW || h!=vrFdmH) {
-    vrFdmLevel = level; vrFdmW = w; vrFdmH = h;
-    vrFdm = Texture2d(); vrFdmValid = false;
-    if(level>0 && w>0 && h>0) {
-      const uint32_t texel = std::clamp<uint32_t>(32u, std::max<uint32_t>(fd.minTexel,1u), std::max<uint32_t>(fd.maxTexel,1u));
-      vrFdm = device.fragmentDensityMap(Vr::foveationMap(level,w,h,texel));
-      vrFdmValid = vrFdm.w()>0;
-      Log::i("VR foveation level ", level, ": map ", Vr::foveationMapSize(w,texel), "x", Vr::foveationMapSize(h,texel),
-             " texel ", texel, " px for ", w, "x", h, vrFdmValid ? "" : " (creation failed, off)");
-      }
-    }
-  cmd.setFragmentDensityMap(vrFdmValid ? &vrFdm : nullptr);
+  auto& device=Resources::device();
+  const auto& caps=device.properties().fragmentRate;
+  vrFdmValid=false; // never re-enable the retired fragment-density path
+  if(!vrRateLogged) {
+    Log::i("VR RDR VRS: ",caps.supported?"supported":"unsupported"," texel=",caps.texel,"; legacy FDM disabled");
+    vrRateLogged=true;
   }
+  const int level=caps.supported?std::clamp(vrVrs,0,4):0;
+  auto& cache=vrRateMaps[vrVrsEye];
+  const Vec2 center(std::clamp(.5f*(1.f+proj[2][0]),.1f,.9f),std::clamp(.5f*(1.f+proj[2][1]),.1f,.9f));
+  if(level && (cache.level!=level || cache.size!=Size(int(w),int(h)) || (center-cache.center).length()>.001f)) {
+    Vr::Rdr::FragmentRateMapSpec spec;
+    spec.width=w; spec.height=h; spec.texelWidth=spec.texelHeight=caps.texel; spec.layers=1;
+    spec.profile=Vr::Rdr::FragmentRateProfile::Conservative; spec.centers[0]={center.x,center.y};
+    const auto profile=Vr::Rdr::fragmentRateLevels[size_t(level)];
+    spec.inner=profile.inner/1000.; spec.outer=profile.outer/1000.; spec.verticalScale=profile.verticalScale/1000.;
+    Vr::Rdr::FragmentRateMap map;
+    if(Vr::Rdr::buildFragmentRateMap(spec,map)) {
+      Pixmap pixels(map.width,map.height,TextureFormat::R8);
+      std::memcpy(pixels.data(),map.pixels.data(),map.pixels.size());
+      cache.map=device.fragmentShadingRateMap(pixels);
+      cache.level=level;cache.size=Size(int(w),int(h));cache.center=center;
+      Log::i("VR RDR VRS eye=",vrVrsEye," level=",level," map=",map.width,"x",map.height," fragment estimate permille=",Vr::Rdr::fragmentRatePermille(map.tileCounts));
+    }
+  }
+  // The backend's rate-map slot is exclusive: R8_UINT selects KHR VRS.
+  cmd.setFragmentDensityMap(level && !cache.map.isEmpty()?&cache.map:nullptr);
+}
+
+void Renderer::drawVrTaa(Attachment& result, Encoder<CommandBuffer>& cmd) {
+  auto& eye=vrTaaEyes[vrTaaEye];
+  auto& device=Resources::device();
+  cmd.setFragmentDensityMap(nullptr);
+  if(eye.color[0].size()!=vrTaaCurrent.size()) {
+    device.waitIdle();
+    Log::i("VR RDR TAA history eye=",vrTaaEye," size=",vrTaaCurrent.w(),"x",vrTaaCurrent.h()," mode=unjittered");
+    for(unsigned i=0;i<2;++i) {
+      eye.color[i]=device.attachment(TextureFormat::RGBA16F,vrTaaCurrent.size());
+      eye.depth[i]=device.attachment(TextureFormat::R32F,vrTaaCurrent.size());
+      cmd.setFramebuffer({{eye.color[i],Vec4(0),Tempest::Preserve},
+                          {eye.depth[i],Vec4(0),Tempest::Preserve}});
+    }
+    eye.valid=false;
+  }
+  // Camera-relative reprojection avoids cancellation at large Gothic world coordinates.
+  const bool valid=eye.valid && eye.frame+1==vrTaaFrame && (eye.origin-vrTaaOrigin).length()<300.f && eye.projection==vrTaaProjection;
+  struct Push {
+    Matrix4x4 reproject;
+    Vec4 winv,tune;
+    Vec3 range;
+    uint32_t jitter=0;
+    uint32_t info[4];
+  } p;
+  static_assert(sizeof(Push)==128);
+  p.reproject=valid?Vr::taaReprojection(eye.previous,vrTaaViewProjection,eye.origin,vrTaaOrigin):Matrix4x4::mkIdentity();
+  auto ip=vrTaaProjection; ip.inverse();
+  p.winv=Vec4(ip[0][3],ip[1][3],ip[2][3],ip[3][3]);
+  p.tune=Vec4(1.25f,10.f,5.f,1.f/6.f); // RDR default history/clip tuning
+  p.range=Vec3(1.f/100.f,1.f/6000.f,0.f); // Gothic world units are centimetres
+  p.info[0]=uint32_t(vrTaaCurrent.w()); p.info[1]=uint32_t(vrTaaCurrent.h());
+  p.info[2]=4u|(valid?0u:1u); p.info[3]=0; // UNORM, unjittered RDR TAA
+  const unsigned next=eye.index^1u;
+  cmd.setFramebuffer({{eye.color[next],Tempest::Discard,Tempest::Preserve},
+                      {eye.depth[next],Tempest::Discard,Tempest::Preserve}});
+  cmd.setBinding(0,vrTaaCurrent,Sampler::nearest(ClampMode::ClampToEdge));
+  cmd.setBinding(1,zbuffer,Sampler::nearest(ClampMode::ClampToEdge));
+  cmd.setBinding(2,eye.color[eye.index],Sampler::bilinear(ClampMode::ClampToEdge));
+  cmd.setBinding(3,eye.depth[eye.index],Sampler::nearest(ClampMode::ClampToEdge));
+  cmd.setPushData(p); cmd.setPipeline(shaders.vrTaaResolve); cmd.draw(nullptr,0,3);
+  if(vrScaleRectActive) cmd.setRenderArea(Rect(0,0,vrTaaCurrent.w(),vrTaaCurrent.h()));
+  if(vrOverlay.depth!=nullptr && vrOverlay.draw)
+    cmd.setFramebuffer({{result,Tempest::Discard,Tempest::Preserve}}, {*vrOverlay.depth,1.f,Tempest::Discard});
+  else cmd.setFramebuffer({{result,Tempest::Discard,Tempest::Preserve}});
+  if(vrScaleRectActive) {
+    cmd.setViewport(0,0,vrTaaCurrent.w(),vrTaaCurrent.h());
+    cmd.setScissor(0,0,vrTaaCurrent.w(),vrTaaCurrent.h());
+  }
+  cmd.setBinding(0,eye.color[next],Sampler::nearest(ClampMode::ClampToEdge));
+  cmd.setBinding(1,vrTaaCurrent,Sampler::nearest(ClampMode::ClampToEdge));
+  cmd.setPushData(p); cmd.setPipeline(shaders.vrTaaApply); cmd.draw(nullptr,0,3);
+  eye.index=next; eye.previous=vrTaaViewProjection; eye.origin=vrTaaOrigin;
+  eye.frame=vrTaaFrame; eye.projection=vrTaaProjection; eye.valid=true;
+}
 
 void Renderer::drawTonemapping(Attachment& result, Encoder<CommandBuffer>& cmd, const WorldView& wview) {
   struct Push {
@@ -1217,16 +1287,21 @@ void Renderer::drawTonemapping(Attachment& result, Encoder<CommandBuffer>& cmd, 
     }
 #endif
   const bool overlay = vrOverlay.depth!=nullptr && vrOverlay.draw;
+  if(vrTaaActive && vrTaaCurrent.size()!=sceneLinear.size()) {
+    vrTaaCurrent=Resources::device().attachment(TextureFormat::RGBA8,sceneLinear.size());
+    for(auto& e:vrTaaEyes) e.valid=false;
+  }
+  auto& toneTarget=vrTaaActive?vrTaaCurrent:result;
   const int  rectW = sceneLinear.w(), rectH = sceneLinear.h();
   // only the internal-size top-left rectangle of the eye
   // image is loaded, drawn and stored; the hands overlay (full-size depth)
   // draws through the same viewport.
   if(vrScaleRectActive)
     cmd.setRenderArea(Rect(0, 0, rectW, rectH));
-  if(overlay)
-    cmd.setFramebuffer({ {result, Tempest::Discard, Tempest::Preserve} }, {*vrOverlay.depth, 1.f, Tempest::Discard});
+  if(overlay && !vrTaaActive)
+    cmd.setFramebuffer({ {toneTarget, Tempest::Discard, Tempest::Preserve} }, {*vrOverlay.depth, 1.f, Tempest::Discard});
   else
-    cmd.setFramebuffer({ {result, Tempest::Discard, Tempest::Preserve} });
+    cmd.setFramebuffer({ {toneTarget, Tempest::Discard, Tempest::Preserve} });
   if(vrScaleRectActive) {
     cmd.setViewport(0, 0, rectW, rectH);
     cmd.setScissor (0, 0, rectW, rectH);
@@ -1252,6 +1327,7 @@ void Renderer::drawTonemapping(Attachment& result, Encoder<CommandBuffer>& cmd, 
   cmd.setPushData(p);
   cmd.setPipeline(pso);
   cmd.draw(nullptr, 0, 3);
+  if(vrTaaActive) drawVrTaa(result,cmd);
   if(overlay) {
     cmd.setDebugMarker("VR hands / held items");
     vrOverlay.draw(cmd);
@@ -2352,7 +2428,7 @@ void Renderer::prepareVrShadow(WorldView& wview, const Camera& shadowView, bool 
                    !settings.vsmEnabled && !settings.rtsmEnabled;
   // 2002 static lighting: the static map is still built (objects only, the
   // bake carries the terrain's own shadows) so trees and buildings cast onto
-  // the baked ground; 0.0.37 measured it at about 0.13 ms per frame.
+  // the baked ground.
   const bool buildStatic = true;
   if(!vrShadowActive) {
     vrShadowSlicer.reset();
@@ -2407,7 +2483,7 @@ void Renderer::prepareVrShadow(WorldView& wview, const Camera& shadowView, bool 
       // finished map stays until the head moves 8 m, the sun turns 0.25 deg,
       // the command list changes, a static caster moves inside it or 10 s
       // pass; otherwise a cycle starts as soon as one ends. A command change
-      // mid-cycle restarts it either way (0.0.36/37: no slice may miss clusters).
+      // mid-cycle restarts it either way so no slice misses clusters.
       const Vec3 snapped = Vr::snapCenter(center,sun,vrShadowStaticWidth,resS);
       Vr::ShadowSlicer::Inputs in;
       in.center      = snapped;
@@ -2418,7 +2494,7 @@ void Renderer::prepareVrShadow(WorldView& wview, const Camera& shadowView, bool 
       vrShadowStep = vrShadowSlicer.step(Vr::shadowMatrix(snapped, sun, vrShadowStaticWidth, vrShadowDepth), in);
       if(vrShadowStep.begin) {
         // Balanced slices: this map's caster weights give the cycle's cluster
-        // ranges (047: raw ranges put the objects into 1-2 of 12 slices).
+        // ranges (raw ranges put the objects into 1-2 of 12 slices).
         vrShadowBounds.clear();
         if(vrShadowBalanced) {
           wview.vrStaticShadowWeights(vrShadowSlicer.build, vrShadowStaticWidth, vrStaticLighting, vrShadowWeights);
@@ -2461,8 +2537,7 @@ void Renderer::prepareVrShadow(WorldView& wview, const Camera& shadowView, bool 
       }
     }
   // Both eyes: updateCamera rewrote shadowMatrix with the desktop cascades, so
-  // the cached matrices are restored here for the second eye too (0.0.34/35
-  // had shadows in the left eye only).
+  // the cached matrices are restored here for the second eye too.
   shadowMatrix[0] = vrShadowDynamic;
   shadowMatrix[1] = vrShadowStaticMat;
   // Every first-eye frame of a cycle culls its own cluster range into the
@@ -2721,7 +2796,7 @@ void Renderer::prepareVisibleLights(Encoder<CommandBuffer>& cmd, const WorldView
     vrUniformLightsReady=vrUniformLights && count<=2048u && !shaders.lightsSlabUniform.isEmpty();
   }
   else if(vrTiledLights && !vrSlabLights) {
-    // "Light slabs: Off" keeps the 0.0.18 tiled comparison route. With slabs
+    // "Light slabs: Off" keeps the tiled comparison route. With slabs
     // on and the gate closed every light uses the volume route.
     const uint32_t width=(uint32_t(zbuffer.w())+15u)/16u;
     const uint32_t height=(uint32_t(zbuffer.h())+15u)/16u;

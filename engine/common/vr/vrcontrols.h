@@ -50,6 +50,9 @@ struct Settings {
   bool welcomeSeen=false;
   float runSpeed=1;
   bool runHold=false;
+  int cutsceneMode=1; // Default: original camera in stereo. Saved choices win.
+  bool taa=false;
+  int vrs=1; // Low by default; an explicit saved choice wins.
   float worldScale=1, renderScale=1, hudDistance=2, hudX=0, hudY=0;
   int fogMode=0, gpuSampling=1; // Mobile atmosphere / sampled GPU queries
   bool fastLighting=true, indexedObjects=true, batchedObjects=true, frameOverlap=true;
@@ -72,10 +75,21 @@ struct Settings {
   // Live profiler display while Profiler is on: 0 = panel, 1 = one compact line
   // at the bottom, 2 = CSV only. The panel keeps the HUD layer and its clear/copy
   // large; captures should use Compact or CSV only.
+#if defined(GOTHIC2VR_MENU_DIAGNOSTICS)
   int profilerView=0;
+#else
+  int profilerView=1;
+#endif
   void sanitize() {
     runSpeed=std::isfinite(runSpeed)?std::clamp(runSpeed,.75f,2.f):1.f;
     profilerView=std::clamp(profilerView,0,2);
+    cutsceneMode=std::clamp(cutsceneMode,0,2);
+    vrs=std::clamp(vrs,0,4);
+    foveation=0;
+#if !defined(GOTHIC2VR_MENU_DIAGNOSTICS)
+    profilerView=1; // Player-facing FPS counter; no profiling panel/CSV selector.
+    gpuSampling=0;
+#endif
     interaction.sanitize();for(auto& m:mapping)m=std::clamp(m,0,9);
     fogMode=std::clamp(fogMode,0,1); gpuSampling=std::clamp(gpuSampling,0,2); objectDistance=std::clamp(objectDistance,0,3); horizon=std::clamp(horizon,0,3); cpuLevel=std::clamp(cpuLevel,0,4); gpuLevel=std::clamp(gpuLevel,0,4); terrainLod=std::clamp(terrainLod,0,3); foveation=std::clamp(foveation,0,3);
     hudX=std::isfinite(hudX)?std::clamp(hudX,-0.3f,0.3f):0.f;
@@ -135,6 +149,9 @@ struct Settings {
       else if(key=="WelcomeSeen") welcomeSeen=n!=0;
       else if(key=="RunSpeed") runSpeed=float(n);
       else if(key=="RunHold") runHold=n!=0;
+      else if(key=="CutsceneMode") cutsceneMode=int(n);
+      else if(key=="TAA") taa=n!=0;
+      else if(key=="VRS") vrs=int(n);
       else if(key=="WorldScale") worldScale=float(n);
       else if(key=="RenderScale") renderScale=float(n);
       else if(key=="HudDistance") hudDistance=float(n);
@@ -164,8 +181,8 @@ struct Settings {
       else if(key=="CpuLevel") cpuLevel=int(n);
       else if(key=="GpuLevel") gpuLevel=int(n);
       else if(key=="TerrainLod") terrainLod=int(n);
-      else if(key=="FoveationBands") foveation=int(n); // 0.0.28 wrote "Foveation"; that key is ignored so the 0.0.28 default does not persist
-      else if(key=="PowerMode") cpuLevel=gpuLevel=(int(n)==2?4:int(n)==1?3:0); // 0.0.26 single Power row
+      else if(key=="FoveationBands") foveation=int(n); // Ignore the legacy "Foveation" key to avoid restoring the artifact-prone path
+      else if(key=="PowerMode") cpuLevel=gpuLevel=(int(n)==2?4:int(n)==1?3:0); // Legacy single Power row
       else if(key=="EarlyLeftEye") earlyLeftEye=n!=0;
       else if(key=="StaticLighting") staticLighting=n!=0;
       else if(key=="GpuSampling") gpuSampling=int(n);
@@ -214,7 +231,7 @@ struct Settings {
     for(int i=0;i<4;++i) f<<"HolsterItem"<<i<<'='<<interaction.items[size_t(i)]<<"\nHolsterX"<<i<<'='<<interaction.offsets[size_t(i)].x<<"\nHolsterY"<<i<<'='<<interaction.offsets[size_t(i)].y<<"\nHolsterZ"<<i<<'='<<interaction.offsets[size_t(i)].z<<'\n';
 
     f<<"[VR]\nTurnMode="<<int(turn)<<"\nSnapAngle="<<snapAngle<<"\nSmoothSpeed="<<smoothSpeed
-     <<"\nWelcomeSeen="<<welcomeSeen<<"\nRunSpeed="<<runSpeed<<"\nRunHold="<<runHold<<"\nWorldScale="<<worldScale<<"\nRenderScale="<<renderScale<<"\nHudDistance="<<hudDistance
+     <<"\nWelcomeSeen="<<welcomeSeen<<"\nRunSpeed="<<runSpeed<<"\nTAA="<<taa<<"\nVRS="<<vrs<<"\nCutsceneMode="<<cutsceneMode<<"\nRunHold="<<runHold<<"\nWorldScale="<<worldScale<<"\nRenderScale="<<renderScale<<"\nHudDistance="<<hudDistance
      <<"\nHudX="<<hudX<<"\nHudY="<<hudY<<"\nFogMode="<<fogMode<<"\nGpuSampling="<<gpuSampling
      <<"\nFastLighting="<<fastLighting<<"\nIndexedObjects="<<indexedObjects<<"\nBatchedObjects="<<batchedObjects<<"\nFrameOverlap="<<frameOverlap
      <<"\nShadows="<<shadows<<"\nLighting="<<lighting<<"\nLocalLights="<<localLights
@@ -241,6 +258,8 @@ struct Settings {
   }
 };
 struct Input {
+  uint64_t menuHoldMs=500;
+  bool cutscene=false;
   bool focused=false,leftGrip=false,rightGrip=false,menu=false,a=false,b=false;
   bool yButton=false,leftClick=false,rightClick=false;
   float x=0,y=0,trigger=0,secondaryTrigger=0;
@@ -249,7 +268,7 @@ struct Input {
 class Menu {
   public:
     enum Row { Turn,SnapAngle,SmoothSpeed,WorldScale,RoomScale,HeadMovement,HidePlayer,RenderScale,HudDistance,Profiler,Recenter,Close,
-               Locomotion,Hud,Performance,HudX,HudY,HudReset,FogMode,GpuSampling,Back,FastLighting,IndexedObjects,RenderTests,Shadows,Lighting,LocalLights,FrameOverlap,TiledLights,SubgroupTiles,UniformLights,StereoSeed,FramePipeline,BatchedObjects,CpuStaging,LightDepth,MergedTransparency,DirectOutput,SlabLights,ObjectDistance,Holsters,Cheats,CheatPlayer,CheatEnemies,CheatItems,CheatWorld,Hands,HolsterEnabled,HolsterModels,HolsterPoint,HolsterItem,HolsterX,HolsterY,HolsterZ,HolsterRadius,PickupRadius,PhysicalCombat,SwingSpeed,HolsterReset,GodMode,Heal,EnemyCategory,EnemySelect,EnemySpawn,ItemCategory,ItemSelect,ItemQuantity,ItemGive,TimeHour,TimeApply,WeatherMode,WeatherApply,Controls,ItemCalibrationMenu,MapA,MapB,MapX,MapY,MapL3,MapR3,MapReset,CalHand,CalItem,CalX,CalY,CalZ,CalPitch,CalYaw,CalRoll,CalReset,ItemSwords,ItemTwoHanded,ItemBows,ItemCrossbows,ItemPotions,ItemAmmo,ItemArmor,ItemMagic,ItemOther,ItemAll,EnemyAnimals,EnemyGoblins,EnemyOrcs,EnemyUndead,EnemyGolems,EnemyMonsters,EnemyPeople,EnemyAll,HorizonHaze,EarlyLeftEye,Horizon,Power,CpuLevel,GpuLevel,TerrainLod,Foveation,HolsterAtLeft,HolsterAtRight,CalModel,CalAim,CalSupport,CalHolstered,CalStep,CalGrip,CalFlip,CalCopyHand,CalAimX,CalAimY,CalAimZ,CalAimPitch,CalAimYaw,CalAimRoll,CalAimReset,CalSupX,CalSupY,CalSupZ,CalSupPitch,CalSupYaw,CalSupRoll,CalSupReset,CalHolX,CalHolY,CalHolZ,CalHolPitch,CalHolYaw,CalHolRoll,CalHolReset,CalUseDefault,GripLock,PickupHighlight,CalBow,CalBowString,CalArrow,StaticLighting,CalScale,CalStringHeight,CalStringCenter,PickupHighlightRange,BowSight,IgnoreWeaponRequirements,HolsterSlot0,HolsterSlot1,HolsterSlot2,HolsterSlot3,HolsterMoveTarget,HolsterMove,HolsterClear,HolsterDrop,OpenGameInterface,CalStringSide,CalStringDepth,CalUseBowDefault,CalUseCrossbowDefault,RunSpeed,OpenCharacterStats,OpenGameMenu,RunMode };
+               Locomotion,Hud,Performance,HudX,HudY,HudReset,FogMode,GpuSampling,Back,FastLighting,IndexedObjects,RenderTests,Shadows,Lighting,LocalLights,FrameOverlap,TiledLights,SubgroupTiles,UniformLights,StereoSeed,FramePipeline,BatchedObjects,CpuStaging,LightDepth,MergedTransparency,DirectOutput,SlabLights,ObjectDistance,Holsters,Cheats,CheatPlayer,CheatEnemies,CheatItems,CheatWorld,Hands,HolsterEnabled,HolsterModels,HolsterPoint,HolsterItem,HolsterX,HolsterY,HolsterZ,HolsterRadius,PickupRadius,PhysicalCombat,SwingSpeed,HolsterReset,GodMode,Heal,EnemyCategory,EnemySelect,EnemySpawn,ItemCategory,ItemSelect,ItemQuantity,ItemGive,TimeHour,TimeApply,WeatherMode,WeatherApply,Controls,ItemCalibrationMenu,MapA,MapB,MapX,MapY,MapL3,MapR3,MapReset,CalHand,CalItem,CalX,CalY,CalZ,CalPitch,CalYaw,CalRoll,CalReset,ItemSwords,ItemTwoHanded,ItemBows,ItemCrossbows,ItemPotions,ItemAmmo,ItemArmor,ItemMagic,ItemOther,ItemAll,EnemyAnimals,EnemyGoblins,EnemyOrcs,EnemyUndead,EnemyGolems,EnemyMonsters,EnemyPeople,EnemyAll,HorizonHaze,EarlyLeftEye,Horizon,Power,CpuLevel,GpuLevel,TerrainLod,Foveation,HolsterAtLeft,HolsterAtRight,CalModel,CalAim,CalSupport,CalHolstered,CalStep,CalGrip,CalFlip,CalCopyHand,CalAimX,CalAimY,CalAimZ,CalAimPitch,CalAimYaw,CalAimRoll,CalAimReset,CalSupX,CalSupY,CalSupZ,CalSupPitch,CalSupYaw,CalSupRoll,CalSupReset,CalHolX,CalHolY,CalHolZ,CalHolPitch,CalHolYaw,CalHolRoll,CalHolReset,CalUseDefault,GripLock,PickupHighlight,CalBow,CalBowString,CalArrow,StaticLighting,CalScale,CalStringHeight,CalStringCenter,PickupHighlightRange,BowSight,IgnoreWeaponRequirements,HolsterSlot0,HolsterSlot1,HolsterSlot2,HolsterSlot3,HolsterMoveTarget,HolsterMove,HolsterClear,HolsterDrop,OpenGameInterface,CalStringSide,CalStringDepth,CalUseBowDefault,CalUseCrossbowDefault,RunSpeed,OpenCharacterStats,OpenGameMenu,RunMode,CutsceneMode,Taa,Vrs };
     enum class Page { Main,Locomotion,Hud,Performance,RenderTests,Holsters,Cheats,CheatPlayer,CheatEnemies,CheatItems,CheatWorld,ItemList,Controls,Calibration,EnemyList,Power,CalibrationHome,Aim,Support,Holstered,HolsterSlot };
     static const char* performanceLevelName(int level) {
       switch(level) { case 1: return "Power savings"; case 2: return "Sustained low"; case 3: return "Sustained high"; case 4: return "Boost"; default: return "Runtime default"; }
@@ -267,7 +286,10 @@ class Menu {
     }
     bool toggleRow() const {
       switch(row()) {
-        case RunMode:case RoomScale:case HeadMovement:case HidePlayer:case FogMode:case FastLighting:case IndexedObjects:
+#if !defined(GOTHIC2VR_MENU_DIAGNOSTICS)
+        case Profiler:return true;
+#endif
+        case Taa:case RunMode:case RoomScale:case HeadMovement:case HidePlayer:case FogMode:case FastLighting:case IndexedObjects:
         case BatchedObjects:case HorizonHaze:case EarlyLeftEye:case StaticLighting:case Shadows:case Lighting:
         case LocalLights:case FrameOverlap:case TiledLights:case SubgroupTiles:case UniformLights:case StereoSeed:
         case FramePipeline:case CpuStaging:case LightDepth:case MergedTransparency:case DirectOutput:case SlabLights:
@@ -283,7 +305,7 @@ class Menu {
         case HolsterX:case HolsterY:case HolsterZ:case HolsterRadius:case PickupRadius:case SwingSpeed:
         case MapA:case MapB:case MapX:case MapY:case MapL3:case MapR3:
         case EnemyCategory:case EnemySelect:case ItemCategory:case ItemSelect:case ItemQuantity:case TimeHour:case WeatherMode:
-        case RunMode:case RunSpeed:case Turn:case SnapAngle:case SmoothSpeed:case WorldScale:case RoomScale:case HeadMovement:
+        case Taa:case Vrs:case CutsceneMode:case RunMode:case RunSpeed:case Turn:case SnapAngle:case SmoothSpeed:case WorldScale:case RoomScale:case HeadMovement:
         case HidePlayer:case RenderScale:case HudDistance:case HudX:case HudY:case Profiler:case FogMode:case GpuSampling:
         case FastLighting:case IndexedObjects:case BatchedObjects:case ObjectDistance:case HorizonHaze:case EarlyLeftEye:
         case Horizon:case CpuLevel:case GpuLevel:case TerrainLod:case Foveation:case StaticLighting:
@@ -296,10 +318,14 @@ class Menu {
     }
     bool interactionPreview(bool focused) const { return visible && focused; }
     std::span<const Row> rows() const {
-      static constexpr Row main[]={Locomotion,Hud,Performance,Recenter,Holsters,Cheats,Controls,ItemCalibrationMenu,OpenGameInterface,OpenCharacterStats,Close};
+      static constexpr Row main[]={Locomotion,Hud,Performance,Recenter,Holsters,Cheats,Controls,ItemCalibrationMenu,OpenGameInterface,OpenCharacterStats,CutsceneMode,Close};
       static constexpr Row locomotion[]={Turn,SnapAngle,SmoothSpeed,WorldScale,RoomScale,HeadMovement,RunSpeed,RunMode,Back};
       static constexpr Row hud[]={PickupHighlight,PickupHighlightRange,BowSight,HudDistance,HudX,HudY,HudReset,HidePlayer,Back};
-      static constexpr Row performance[]={RenderScale,FogMode,Profiler,GpuSampling,FastLighting,IndexedObjects,BatchedObjects,ObjectDistance,RenderTests,DirectOutput,HorizonHaze,EarlyLeftEye,Horizon,Power,TerrainLod,Foveation,StaticLighting,Back};
+#if defined(GOTHIC2VR_MENU_DIAGNOSTICS)
+      static constexpr Row performance[]={RenderScale,FogMode,Profiler,GpuSampling,FastLighting,IndexedObjects,BatchedObjects,ObjectDistance,RenderTests,DirectOutput,HorizonHaze,EarlyLeftEye,Horizon,Power,TerrainLod,Vrs,StaticLighting,Taa,Back};
+#else
+      static constexpr Row performance[]={RenderScale,Taa,Vrs,ObjectDistance,TerrainLod,Horizon,FogMode,HorizonHaze,StaticLighting,Profiler,Back};
+#endif
       static constexpr Row power[]={CpuLevel,GpuLevel,Back};
       static constexpr Row renderTests[]={Shadows,Lighting,LocalLights,FrameOverlap,TiledLights,SubgroupTiles,UniformLights,StereoSeed,FramePipeline,CpuStaging,LightDepth,MergedTransparency,SlabLights,Back};
       static constexpr Row holsters[]={HolsterSlot0,HolsterSlot1,HolsterSlot2,HolsterSlot3,GripLock,Hands,HolsterEnabled,HolsterModels,HolsterPoint,HolsterItem,HolsterX,HolsterY,HolsterZ,HolsterRadius,PickupRadius,PhysicalCombat,SwingSpeed,HolsterReset,HolsterAtLeft,HolsterAtRight,CalHolstered,Back};
@@ -361,7 +387,7 @@ class Menu {
         case Page::CheatWorld: return "CHEATS - WORLD";
         case Page::Locomotion: return "GOTHIC II VR - LOCOMOTION";
         case Page::Hud: return "GOTHIC II VR - HUD";
-        case Page::Performance: return "GOTHIC II VR - PERFORMANCE";
+        case Page::Performance: return "GOTHIC II VR - GRAPHICS";
         case Page::RenderTests: return "GOTHIC II VR - RENDER TESTS";
         case Page::Power: return "PERFORMANCE - POWER";
         default: return "GOTHIC II VR - SETTINGS";
@@ -369,6 +395,9 @@ class Menu {
     }
     bool update(const Input& in,uint64_t now) {
       changed=false; recenter=false; action=-1; actionDirection=0;
+      const bool previousClick=cutsceneClickDown; cutsceneClickDown=in.rightClick;
+      if(!in.menu || !in.focused) menuPressedAt=0;
+      else if(menuPressedAt==0) menuPressedAt=now?now:1;
       if(!in.focused) { gate=true; chordDown=true; gameChordDown=true; neutral=false; return true; }
       const bool chord=(in.leftClick && in.rightClick) || (in.leftGrip && in.rightGrip && in.menu);
       const bool gameChord=in.leftGrip && in.rightGrip && in.yButton;
@@ -388,6 +417,15 @@ class Menu {
       }
       if(gameChord && !gameChordDown) {
         gameChordDown=true; visible=false; action=OpenGameMenu; gate=true; neutral=false;
+        return true;
+      }
+      if(in.menu && menuPressedAt!=0 && now>=menuPressedAt+in.menuHoldMs) {
+        visible=!visible; page=Page::Main; selected=0; gate=true; neutral=false;
+        return true;
+      }
+      // The two-stick menu chord above takes priority. Consume the release too.
+      if(!visible && in.cutscene && (in.rightClick || previousClick)) {
+        if(in.rightClick && !previousClick) { settings.cutsceneMode=(settings.cutsceneMode+1)%3; changed=true; }
         return true;
       }
       const bool triggerEdit=visible && valueRow();
@@ -411,6 +449,8 @@ class Menu {
       return true;
     }
   private:
+    bool cutsceneClickDown=false;
+    uint64_t menuPressedAt=0;
     bool chordDown=false,gameChordDown=false,gate=true,neutral=false,lastA=false,lastB=false,lastTrigger=false;
     int axis=0; uint64_t repeatAt=0;
     void open(Page next) { page=next; selected=0; gate=true; }
@@ -506,6 +546,9 @@ class Menu {
         case Turn: settings.turn=TurnMode((int(settings.turn)+3+direction)%3); break;
         case SnapAngle: settings.snapAngle+=direction*15; break;
         case SmoothSpeed: settings.smoothSpeed+=direction*15; break;
+        case Taa: settings.taa=!settings.taa; break;
+        case Vrs: settings.vrs=(settings.vrs+direction+5)%5; break;
+        case CutsceneMode: settings.cutsceneMode=(settings.cutsceneMode+direction+3)%3; break;
         case RunMode: settings.runHold=!settings.runHold; break;
         case RunSpeed: settings.runSpeed+=float(direction)*.05f; break;
         case WorldScale: settings.worldScale+=float(direction)*0.05f; recenter=true; break;
@@ -546,11 +589,15 @@ class Menu {
         case SlabLights: settings.slabLights=!settings.slabLights; break;
         case GpuSampling: settings.gpuSampling=(settings.gpuSampling+3+direction)%3; break;
         case Profiler: {
+#if !defined(GOTHIC2VR_MENU_DIAGNOSTICS)
+          settings.profiler=!settings.profiler; settings.profilerView=1;
+#else
           // Off -> Panel -> Compact -> CSV only -> Off (one row: menu indices unchanged).
           int state=settings.profiler?1+settings.profilerView:0;
           state=(state+4+direction)%4;
           settings.profiler=state!=0;
           if(state!=0) settings.profilerView=state-1;
+#endif
           break;
         }
         case Recenter: recenter=true; return;

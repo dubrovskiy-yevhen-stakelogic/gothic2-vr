@@ -56,7 +56,7 @@ inline float projected(const Tempest::Matrix4x4& view, const Tempest::Matrix4x4&
 // Prior of the slab route: the sum of squared coverage over the lights at or
 // above the per-light threshold. Four screen-sized overlapping lights (weight
 // 4) are where the slab route started to win on Adreno, while any number of
-// medium lights stays below 1 (PERFORMANCE.md, 0.0.20). Lights the camera is
+// medium lights stays below 1. Lights the camera is
 // inside also weigh 1 each although they light only the nearby surfaces, so
 // this weight only seeds and hints the measured-cost controller
 // (vr/lightroutecontroller.h); it never decides the route by itself.

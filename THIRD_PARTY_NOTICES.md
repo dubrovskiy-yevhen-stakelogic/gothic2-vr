@@ -15,7 +15,7 @@ OpenGothic license; it does not replace the licenses of bundled dependencies.
 | miniz | Archive support | MIT, [engine/lib/miniz/LICENSE](engine/lib/miniz/LICENSE) |
 | OpenAL Soft | Spatial audio | LGPL-2.0-or-later and separately licensed portions, [COPYING](engine/lib/Tempest/Engine/thirdparty/openal-soft/COPYING), [BSD-3Clause](engine/lib/Tempest/Engine/thirdparty/openal-soft/BSD-3Clause), [LICENSE-pffft](engine/lib/Tempest/Engine/thirdparty/openal-soft/LICENSE-pffft) |
 | OpenAL default HRTF | Spatialization filter data derived from MIT KEMAR | Provenance retained in [hrtf.txt](engine/lib/Tempest/Engine/thirdparty/openal-soft/docs/hrtf.txt); this is not recorded game audio |
-| Roboto, Google | User interface fonts | Apache-2.0, [font notice](engine/lib/Tempest/Engine/fonts/NOTICE.md) and [license](engine/lib/Tempest/Engine/fonts/LICENSE.txt) |
+| Roboto, Google | Interface fonts | Apache-2.0, [font notice](engine/lib/Tempest/Engine/fonts/NOTICE.md) and [license](engine/lib/Tempest/Engine/fonts/LICENSE.txt) |
 | UltimateXR, VRMADA | Hand geometry, poses and derived hand texture | MIT, [source description](android/assets/vrhands/SOURCE.md), [license](android/assets/vrhands/ULTIMATEXR_LICENSE.txt) |
 | Gradle wrapper | Build bootstrap | Apache-2.0; wrapper scripts retain their copyright headers; [Apache license](engine/lib/Tempest/Engine/fonts/LICENSE.txt) |
 

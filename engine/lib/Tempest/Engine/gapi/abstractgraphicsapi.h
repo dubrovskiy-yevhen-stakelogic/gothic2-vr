@@ -444,6 +444,10 @@ namespace Tempest {
             uint32_t minTexel  = 0;     // pixels per density-map texel, per axis
             uint32_t maxTexel  = 0;
             } fragmentDensity;
+          struct {
+            bool supported=false;
+            uint32_t texel=0;
+          } fragmentRate;
 
           struct {
             BasicPoint<int,3> maxGroups       = {65535,65535,65535};
@@ -693,6 +697,7 @@ namespace Tempest {
       virtual PTexture   createTexture(Device* d, const uint32_t w, const uint32_t h, uint32_t mips, TextureFormat frm) = 0;
       virtual PTexture   createStorage(Device* d, const uint32_t w, const uint32_t h, uint32_t mips, TextureFormat frm) = 0;
       virtual PTexture   createStorage(Device* d, const uint32_t w, const uint32_t h, const uint32_t depth, uint32_t mips, TextureFormat frm) = 0;
+      virtual PTexture   createFragmentShadingRateMap(Device* d, const Pixmap& p) { (void)d; (void)p; return PTexture(); }
       virtual PTexture   createFragmentDensityMap(Device* d, const Pixmap& p) { (void)d; (void)p; return PTexture(); }
 
       virtual AccelerationStructure* createBottomAccelerationStruct(Device* d, const RtGeometry* geom, size_t geomSize);

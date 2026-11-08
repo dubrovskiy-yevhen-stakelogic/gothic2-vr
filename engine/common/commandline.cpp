@@ -233,7 +233,7 @@ CommandLine::CommandLine(int argc, const char** argv) {
       } else {
       Log::e("Invalid gothic path: \"",TextCodec::toUtf8(gpath),"\"");
       }
-    throw GothicNotFoundException("gothic not found!"); // TODO: user-friendly message-box
+    throw GothicNotFoundException("gothic not found!"); // TODO: installation error dialog
     }
   }
 

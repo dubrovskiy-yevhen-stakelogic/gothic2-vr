@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "target": "Windows 7 SP1 x86; runtime acceptance pending",
+  "archives": [
+    {
+      "id": "python",
+      "url": "https://www.python.org/ftp/python/3.8.10/python-3.8.10-embed-win32.zip",
+      "sha256": "760dc79bcb434ee80b1001a30bb6f798287881851bac6d8137867894d40ef1fc",
+      "destination": "legacy/python"
+    },
+    {
+      "id": "adb",
+      "url": "https://dl.google.com/android/repository/platform-tools_r30.0.5-windows.zip",
+      "sha256": "549ba2bdc31f335eb8a504f005f77606a479cc216d6b64a3e8b64c780003661f",
+      "destination": "legacy/adb",
+      "include": [
+        "platform-tools/adb.exe",
+        "platform-tools/AdbWinApi.dll",
+        "platform-tools/AdbWinUsbApi.dll",
+        "platform-tools/libwinpthread-1.dll",
+        "platform-tools/NOTICE.txt",
+        "platform-tools/source.properties"
+      ]
+    },
+    {
+      "id": "usbdriver",
+      "url": "https://securecdn.oculus.com/binaries/download/?id=2987319634674616",
+      "sha256": "0b075f305bfc50ccd0a145c3247781a82aed12382a63f53bc00f0efd74ad7927",
+      "destination": "legacy/usbdriver"
+    }
+  ],
+  "files": [
+    {
+      "path": "legacy/python/python.exe",
+      "sha256": "da2293a6ed23fcfc1eb795d420f1e04c784e2b7c0eddebc953d4bccfc2f7ee69"
+    },
+    {
+      "path": "legacy/python/pythonw.exe",
+      "sha256": "41ef02449e05acba6d4d245223d385b933c466440200df660ae2854397015d68"
+    },
+    {
+      "path": "legacy/python/python38.dll",
+      "sha256": "a9675a91d767095c9d4a2ae1df6e17bdb59102dbd2b4504c3493b0bcbed5ef55"
+    },
+    {
+      "path": "legacy/python/python3.dll",
+      "sha256": "eac07e177308b8d77e23ef0f510a56b8fb9a56cda876118f9eab1a8e1d9bb399"
+    },
+    {
+      "path": "legacy/python/vcruntime140.dll",
+      "sha256": "9ec4afad505e0a3dad760fa5b59c66606ae54dd043c16914cf56d7006e46d375"
+    },
+    {
+      "path": "legacy/python/LICENSE.txt",
+      "sha256": "f830ec5b33c5ce41bf667d7fb4e395c5ee6fe20a108baebc99be565f0ef0907d"
+    },
+    {
+      "path": "legacy/python/pyexpat.pyd",
+      "sha256": "c8ef88232e6d66dca7f1d7a60a5b0580067a1c9b4a9d21c9f836af4869dcd27c"
+    },
+    {
+      "path": "legacy/python/select.pyd",
+      "sha256": "6d5a3630570035555cea342c3a8e2922ca23451113cb178cd7fee07e59da123c"
+    },
+    {
+      "path": "legacy/python/unicodedata.pyd",
+      "sha256": "af602c6033875478b8cec6270c4b0fa618290b97c7e139d71dbb58b83a08781a"
+    },
+    {
+      "path": "legacy/python/winsound.pyd",
+      "sha256": "aee4a8180f95639cc45da83afee96b6d1b65aca020b63358fbfc428fb5d7f79d"
+    },
+    {
+      "path": "legacy/python/_asyncio.pyd",
+      "sha256": "89b48a77be8fa5b1614152f79c85b56bc26f026b0491749908cdf2186407b06f"
+    },
+    {
+      "path": "legacy/python/_bz2.pyd",
+      "sha256": "82a85187faf8786216c82ac1c4ccf32c8839048e242025ed4e7a1e3ab870255f"
+    },
+    {
+      "path": "legacy/python/_ctypes.pyd",
+      "sha256": "3a94a3525b0531524aabc7f8fc9f1253894cd612a9823d9cdd5070ab81b9d329"
+    },
+    {
+      "path": "legacy/python/_decimal.pyd",
+      "sha256": "44107df49d7dbea4e5d1c7f8a24b2d30c7f4d1623f599c4ea9f5f36c05fe0ee6"
+    },
+    {
+      "path": "legacy/python/_elementtree.pyd",
+      "sha256": "acbd9ec39ced8b521dd637209f88c366c455a18c884d8f02bbeddcf50dc7af6b"
+    },
+    {
+      "path": "legacy/python/_hashlib.pyd",
+      "sha256": "8929b5818aaa0f595b8cc3b6aaddc630f2b27bcde3a29d44c13d95037596aa1b"
+    },
+    {
+      "path": "legacy/python/_lzma.pyd",
+      "sha256": "d3350ad957d6c37b2c75f56a5a149f0eeb58295227f78c15048669a2e816ae3a"
+    },
+    {
+      "path": "legacy/python/_msi.pyd",
+      "sha256": "1b9aa5dca1fe0910331eaf16f3059c740d138384153c9debe5426fbfef4cbd73"
+    },
+    {
+      "path": "legacy/python/_multiprocessing.pyd",
+      "sha256": "0913c9b7a21fe0abd97e27194fb2d5744ca121561d9fdea71d1a9409b93a8fff"
+    },
+    {
+      "path": "legacy/python/_overlapped.pyd",
+      "sha256": "d0e3998106623fd5197a4fb274e91243823c16a8fbba1b42dbccb4bcabd9f074"
+    },
+    {
+      "path": "legacy/python/_queue.pyd",
+      "sha256": "e8d293cf77b9f94395c18a26ce38cc1ca01a183db3e9105ed9040338ea252ae4"
+    },
+    {
+      "path": "legacy/python/_socket.pyd",
+      "sha256": "48f1f1842e6845a197c9be50027bb2a67a868e743bfa81b8d8753c24cdc08b7b"
+    },
+    {
+      "path": "legacy/python/_sqlite3.pyd",
+      "sha256": "dda21a626a57cf6794140e5f7af749baf1ae686a58336a85b20c61b617a99a80"
+    },
+    {
+      "path": "legacy/python/_ssl.pyd",
+      "sha256": "5dc85dd0bee9ef96c1f278398cc7af36de2f3721dce726a4b13d64bd63eabc39"
+    },
+    {
+      "path": "legacy/python/libcrypto-1_1.dll",
+      "sha256": "1e95a63b165672accde92a9c9f8b9052c8f6357344f1376af9f916aeeb306da3"
+    },
+    {
+      "path": "legacy/python/libffi-7.dll",
+      "sha256": "0c7ec6de19c246a23756b8550e6178ac2394b1093e96d0f43789124149486f57"
+    },
+    {
+      "path": "legacy/python/libssl-1_1.dll",
+      "sha256": "06958c63049e2d7fe1f56df3767e884023a76bba1f41319f7fab3439b28174c5"
+    },
+    {
+      "path": "legacy/python/sqlite3.dll",
+      "sha256": "1090083e89dcef8dcb42b9d7a9fc1928ff7b48b538f3ad44113e7cb5df9f0cc2"
+    },
+    {
+      "path": "legacy/python/python38.zip",
+      "sha256": "825b1dc6a156b7e9f76f0f5d46d835ed530435dbf92062ca4faf12bd67785320"
+    },
+    {
+      "path": "legacy/python/python38._pth",
+      "sha256": "df1f2a305dea16f99a05fffe0cb5fabf453aae7ab8924f7bd6cc440719e2e966"
+    },
+    {
+      "path": "legacy/python/python.cat",
+      "sha256": "c4268becd4784648f77aa3fc1027f3eb91bdc3d22d5e20de4d917e3d50585073"
+    },
+    {
+      "path": "legacy/adb/AdbWinApi.dll",
+      "sha256": "d60103a5e99bc9888f786ee916f5d6e45493c3247972cb053833803de7e95cf9"
+    },
+    {
+      "path": "legacy/adb/AdbWinUsbApi.dll",
+      "sha256": "25207c506d29c4e8dceb61b4bd50e8669ba26012988a43fbf26a890b1e60fc97"
+    },
+    {
+      "path": "legacy/adb/NOTICE.txt",
+      "sha256": "d44dd9e40b191f517e325856daca4f5c3a3695d5f64ba328cd217e5fec9c74dd"
+    },
+    {
+      "path": "legacy/adb/adb.exe",
+      "sha256": "6463a60aafbaac5944432c1fcbf3d06ae21e3dd1170464d6af305976bc3c8fdf"
+    },
+    {
+      "path": "legacy/adb/libwinpthread-1.dll",
+      "sha256": "6cd4726956f3487453f151b847affad442a81acfcc4cb816b9bcb5ad5e7b6f7c"
+    },
+    {
+      "path": "legacy/adb/source.properties",
+      "sha256": "6f9469b499934d2b85ff94ed24731a7fc0665b4c02e11e1301c37536d7075f0e"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/amd64/NOTICE.txt",
+      "sha256": "a19b767b9ddda7306c78232e4a223d0ba966471b74dce3c0c995307cab5bf7b7"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/amd64/WdfCoInstaller01009.dll",
+      "sha256": "18487b4ff94edccc98ed59d9fca662d4a1331c5f1e14df8db3093256dd9f1c3e"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/amd64/winusbcoinstaller2.dll",
+      "sha256": "981a17effddbc20377512ddaec9f22c2b7067e17a3e2a8ccf82bb7bb7b2420b6"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/amd64/WUDFUpdate_01009.dll",
+      "sha256": "015f26bbcd619a0b67b5eaa985b69582bac27d5cbca99ce747a76532fcde4aff"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/android_winusb.inf",
+      "sha256": "1f3a81bd34c494703622226b5616176414674d83ca5f78fabb20e4e1492a4b08"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/androidwinusb86.cat",
+      "sha256": "6d31652a57a8cc079f334456f0a73dc83ea75b6984b580f3a67bc895a0429a4b"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/androidwinusba64.cat",
+      "sha256": "212a79f328e112b662e8f0cc372cc400a8b4f498524577b18858a880f5dae303"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/i386/NOTICE.txt",
+      "sha256": "a19b767b9ddda7306c78232e4a223d0ba966471b74dce3c0c995307cab5bf7b7"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/i386/WdfCoInstaller01009.dll",
+      "sha256": "7a6bf1f950684381205c717a51af2d9c81b203cb1f3db0006a4602e2df675c77"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/i386/winusbcoinstaller2.dll",
+      "sha256": "ebe3b7708dd974ee87efed3113028d266af87ca8dbae77c47c6f7612824d3d6c"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/i386/WUDFUpdate_01009.dll",
+      "sha256": "a902bb3bff785faaeb6432be76f798627a80b2cc45441e16440e46e6d7340f2c"
+    },
+    {
+      "path": "legacy/usbdriver/oculus-go-adb-driver-2.0/usb_driver/source.properties",
+      "sha256": "91aa523f69c2291348787a296e3acfa435be7ca3b6dc70a4a4ebfd1f8a3211a2"
+    }
+  ]
+}

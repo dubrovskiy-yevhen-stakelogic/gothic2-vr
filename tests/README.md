@@ -29,7 +29,7 @@ python tools/test-vr-source.py --output ../vr-host-results
 ```
 
 The three source guards check APK/OpenXR version consistency, the removed
-rain-cache duplication, and obvious assistant placeholder phrases in the VR
+rain-cache duplication, and unfinished placeholder text in the VR
 source. These are narrow regression guards, not a complete code review.
 Host passes do not establish headset visuals, frame pacing, collision feel or
 runtime stability.

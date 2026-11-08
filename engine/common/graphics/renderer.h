@@ -57,7 +57,12 @@ class Renderer final {
     // 0 = unlimited, 1 = 300 m, 2 = 200 m, 3 = 120 m (small objects a third of it)
     void setVrObjectDistance(int level) { vrObjectDistance=level; }
     void setVrTerrainLod(int level) { vrTerrainLod=level; }
-    void setVrFoveation(int level) { vrFoveation=level; }
+    void setVrFoveation(int) { vrFoveation=0; } // retired: FDM produces artifacts on Quest
+    void setVrVrs(int level) { vrVrs=level; }
+    void setVrTaa(bool enabled,int scene) {
+      if(enabled!=vrTaa || scene!=vrTaaScene) for(auto& e:vrTaaEyes) e.valid=false;
+      vrTaa=enabled; vrTaaScene=scene;
+    }
     void setVrStaticLighting(bool on) { vrStaticLighting=on; }
     void setVrHorizonHaze(bool enabled) { vrHorizonHaze=enabled; }
     void setVrFastLighting(bool enabled) { vrFastLighting=enabled; }
@@ -121,6 +126,22 @@ class Renderer final {
     Tempest::Texture2d vrFdm; bool vrFdmValid=false; int vrFdmLevel=-1; uint32_t vrFdmW=0, vrFdmH=0; bool vrFdmLogged=false;
     void prepareVrFoveation(Tempest::Encoder<Tempest::CommandBuffer>& cmd, uint32_t w, uint32_t h);
     VrOverlay vrOverlay;
+    int vrVrs=0,vrVrsEye=0;
+    struct RateMap { Tempest::Texture2d map; int level=-1; Tempest::Size size; Tempest::Vec2 center; } vrRateMaps[2];
+    bool vrRateLogged=false;
+    bool vrTaa=false,vrTaaActive=false;
+    int vrTaaScene=-1,vrTaaEye=0;
+    struct TaaEye {
+      Tempest::Attachment color[2],depth[2];
+      Tempest::Matrix4x4 previous,projection;
+      Tempest::Vec3 origin;
+      uint64_t frame=0; unsigned index=0; bool valid=false;
+    } vrTaaEyes[2];
+    Tempest::Attachment vrTaaCurrent;
+    Tempest::Matrix4x4 vrTaaViewProjection,vrTaaProjection;
+    Tempest::Vec3 vrTaaOrigin;
+    uint64_t vrTaaFrame=0;
+    void drawVrTaa(Tempest::Attachment& result,Tempest::Encoder<Tempest::CommandBuffer>& cmd);
     bool vrHorizonHaze=true;
     // VR: the reflections+fog composite pass folded into tonemapping (Gothic.ini
     // [ENGINE] vrFogFoldOff=1 restores the separate pass); active per frame when

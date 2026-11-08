@@ -1,6 +1,8 @@
 # Alpha limitations
 
-**0.2.0 is an early, incomplete VR adaptation. The game is not ready for a complete playthrough.** Many features still need work, and a successful build does not establish full game compatibility.
+- Magic is currently not working. This is a known issue; a fix is planned for a future update, with no release date yet.
+
+**0.2.1 is an early, incomplete VR adaptation. The game is not ready for a complete playthrough.** Many features still need work, and a successful build does not establish full game compatibility.
 
 - Quest 3 with Touch controllers is the tested target. Other Quest models and OpenXR devices are not validated. Controller-free hand tracking is not implemented.
 - Some original actions, spells, quests and interactions may not yet work correctly in VR. Keep several saves.
@@ -10,7 +12,7 @@
 - Objects with a material seen for the first time can appear a few frames late while its shader is prepared. Later sessions reuse the saved shader cache.
 - The original inventory is available through **Open game interface** in a theater panel. Some interfaces still use the original navigation.
 - Physical crouching lowers the camera but does not resize the collision capsule. Room-scale motion is constrained by world geometry.
-- Performance varies by scene and settings. Dynamic lighting and diagnostic modes cost more. Foveation is experimental and off by default. No fixed frame rate is promised.
+- Performance varies by scene and settings. Dynamic lighting and diagnostic modes cost more. VRS defaults to Low; the old fragment-density-map path is disabled. No fixed frame rate is promised.
 - VR menus and release documents are English. The original game's language comes from your own game data.
 - Updates preserve saved settings. Release defaults apply only when there is no saved `VR.ini`; the welcome notice is once per profile, not once per app launch.
 

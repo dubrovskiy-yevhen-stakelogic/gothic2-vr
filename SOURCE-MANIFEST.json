@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "files": [
     {
       "path": ".gitattributes",
@@ -9,13 +9,13 @@
     },
     {
       "path": ".gitignore",
-      "sha256": "3c3ead1243e517a648e1bb8622ccd05eda7d99845c207956b19848a4d9134310",
-      "bytes": 187
+      "sha256": "8e22cdc23fa8bd5b05563f883277e376bc417404cc0d3fbda8e9c5edbe32dec9",
+      "bytes": 207
     },
     {
       "path": "android/AndroidManifest.xml",
-      "sha256": "0b08850a950fd0f59336d65de5e5354d1367f56af608dfd76a6d46f3eaa8fd3f",
-      "bytes": 2701
+      "sha256": "4e88ecc02df56d91827cf7e94660ff4df584c3c1d6e8406948d49f6422bea993",
+      "bytes": 2675
     },
     {
       "path": "android/assets/vrhands/BigHandLeft.uxrh",
@@ -44,7 +44,7 @@
     },
     {
       "path": "android/CMakeLists.txt",
-      "sha256": "130482c7851c9b647daf2a8866971a9fed684c9302a3bced758cdd122d295017",
+      "sha256": "623aa197d13445dc748bac4cf2ba2b7798f22edce47fc9b43ab6c6fd413e4ca7",
       "bytes": 1845
     },
     {
@@ -59,13 +59,13 @@
     },
     {
       "path": "BUILDING.md",
-      "sha256": "44deb2dd618722f7bec0e445349baf4641cbe0a119442315e946a6023b394ba6",
-      "bytes": 10870
+      "sha256": "320bd358f0322c9b1e16dcc20e55b8f44b6cb8b8e4493936914adfed4a9ff85b",
+      "bytes": 10916
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "613170846434abec7c3a6658681c2ea52d156988d48c5f507f0cf88e63d9a29d",
-      "bytes": 2592
+      "sha256": "7399a2028e6dd7e4a0994ac6135737d539fa1812075ab40db3a1dc6e8af37368",
+      "bytes": 5015
     },
     {
       "path": "config/android-toolchain.lock.json",
@@ -98,9 +98,14 @@
       "bytes": 3898
     },
     {
+      "path": "config/win7-tools.lock.json",
+      "sha256": "214bda566a0ca9094434b9099d8169da425e71096bece9c0520538221d9fb140",
+      "bytes": 8799
+    },
+    {
       "path": "CONTROLS.md",
-      "sha256": "e663f9a8f3c30bcf0efdfaedbd89dc44e6cc55a525bfe4502841a2930a7b98a5",
-      "bytes": 6141
+      "sha256": "f6aa18402c9775667f65c9723d0a6b5d1021fab88d9b501eb38e309d1d9c17c5",
+      "bytes": 6647
     },
     {
       "path": "engine/android/app/identity.xml.in",
@@ -109,8 +114,8 @@
     },
     {
       "path": "engine/android/app/SetupActivity.java.in",
-      "sha256": "3202d1540cface8cc0cd482bececfd8d2c6528b0008a130aed47cfde2f2eb9ce",
-      "bytes": 11377
+      "sha256": "e62fb3c0c0e2161f82f25a34aa132970d4abd6c5e608c74d7fc157aba9bf46af",
+      "bytes": 11625
     },
     {
       "path": "engine/android/app/shortcuts.xml.in",
@@ -124,8 +129,8 @@
     },
     {
       "path": "engine/android/app/src/main/java/org/opengothic/app/PrivateAssets.java",
-      "sha256": "b1beb3b04b11af85778a071a42d237ca1fd7c6d87180b467dbc44bb521d838e1",
-      "bytes": 8952
+      "sha256": "6ecac7fb689071a60b703df814c05491306c080d88a1b62f89bf1ed21f427187",
+      "bytes": 9131
     },
     {
       "path": "engine/android/app/src/main/res/drawable/ic_launcher_foreground.xml",
@@ -174,8 +179,8 @@
     },
     {
       "path": "engine/android/tools/game_package.py",
-      "sha256": "7aaea81925130716b2d5aa3081e51382a9f31e3a4083a45b6e22c9b224d5cbd8",
-      "bytes": 9532
+      "sha256": "dcdf0b7e283479ac0136fdfda374da3e5b8e0a7d9dca3b60707aeae00ce67fa8",
+      "bytes": 9673
     },
     {
       "path": "engine/CMakeLists.txt",
@@ -224,7 +229,7 @@
     },
     {
       "path": "engine/common/commandline.cpp",
-      "sha256": "573ebc919af75caf5c2464e02de9de2b4585fbc69df1ecd1b428596da36e963d",
+      "sha256": "f7a183013198721b8d230505aec038a050ca1ffb288efd8e737d13d6e8319353",
       "bytes": 8325
     },
     {
@@ -469,8 +474,8 @@
     },
     {
       "path": "engine/common/game/compatibility/mem32.cpp",
-      "sha256": "8d4a7f9347998c93538bde0eb0f91b750b369583dc5edfcd0b7abb4f93f0b133",
-      "bytes": 13349
+      "sha256": "9971e527b21107e141dc4ff203f3e242aeb306f8a28ad0dcd36ac688781ac510",
+      "bytes": 13364
     },
     {
       "path": "engine/common/game/compatibility/mem32.h",
@@ -499,8 +504,8 @@
     },
     {
       "path": "engine/common/game/constants.h",
-      "sha256": "db1c06cddaf2fbc1b8e10801a18124b4ec4afe8c86b6f63688af559fb6b3dd3b",
-      "bytes": 15465
+      "sha256": "ee0eb3532c24bdb0d61424f0e3f7fd9022aceed9c79d63b286a8c9bdae32acf9",
+      "bytes": 15469
     },
     {
       "path": "engine/common/game/damagecalculator.cpp",
@@ -649,13 +654,13 @@
     },
     {
       "path": "engine/common/game/movealgo.cpp",
-      "sha256": "db4b7f6bef94117e0d8c79407f13a1e57ad5e5e4fa3cd90153ca75f79e1907cb",
-      "bytes": 34963
+      "sha256": "fd15ff51999d902ccba35bbc54b0a0ff6e820c8bce859adb4a7c83de374d7849",
+      "bytes": 38195
     },
     {
       "path": "engine/common/game/movealgo.h",
-      "sha256": "bdf9f351606da432bd85b7f846ce0def0f8d1edb12cb023a1d930e10febbd4c6",
-      "bytes": 5977
+      "sha256": "9594a60b41e03c401d76d00551ad0b6d7dde0777b754b8b2d24876f7e6e36ecf",
+      "bytes": 6527
     },
     {
       "path": "engine/common/game/perceptionmsg.h",
@@ -664,8 +669,8 @@
     },
     {
       "path": "engine/common/game/playercontrol.cpp",
-      "sha256": "e62692e9b738667e2696c28877cd7a54315a73aabe10ccd26c93dbfe95c37c96",
-      "bytes": 49298
+      "sha256": "6cb8c3d5a85af6dd561e0d653b7e99f7b7f8ac9b0446e9f4f1d5ad0b78e60464",
+      "bytes": 49436
     },
     {
       "path": "engine/common/game/playercontrol.h",
@@ -734,8 +739,8 @@
     },
     {
       "path": "engine/common/gamepad.cpp",
-      "sha256": "55a8ce68c468c9cd40ec3803d18f2eaccbaf7d28d7f91828a9c609de7c7cec80",
-      "bytes": 36502
+      "sha256": "cee7f0241f7449249ed9d2000f2256874d2afa0a6b431466d339cf81230245cf",
+      "bytes": 37471
     },
     {
       "path": "engine/common/gothic.cpp",
@@ -784,8 +789,8 @@
     },
     {
       "path": "engine/common/graphics/drawcommands.cpp",
-      "sha256": "5df18c5f603848a31b414be1d6cad6e0114152e516d4c4a71f0edfe85d8e902e",
-      "bytes": 35960
+      "sha256": "c09411730d022b2e0c9484797e99d71f425b5450b5831547417bd65bc24b95a5",
+      "bytes": 36796
     },
     {
       "path": "engine/common/graphics/drawcommands.h",
@@ -834,8 +839,8 @@
     },
     {
       "path": "engine/common/graphics/lightcoverage.h",
-      "sha256": "caf566afc1bcf63e0ca4f97c68735f1d05790261199d6cded58df801aeeb63c9",
-      "bytes": 3149
+      "sha256": "d62aa5329d5d128c0e935ee68dd7ef60a099b48f5e7071f0cf9c050fd77e96b0",
+      "bytes": 3191
     },
     {
       "path": "engine/common/graphics/lightgrid.h",
@@ -899,8 +904,8 @@
     },
     {
       "path": "engine/common/graphics/mesh/animationsolver.cpp",
-      "sha256": "b6a7730bedcc935125b5704367e202afed7891794e763222b3032612d3e0f873",
-      "bytes": 15803
+      "sha256": "2b06a33753f042f2e4a668da4447d0443b4af7f51cdba04bc364639de69bc849",
+      "bytes": 15812
     },
     {
       "path": "engine/common/graphics/mesh/animationsolver.h",
@@ -1059,13 +1064,13 @@
     },
     {
       "path": "engine/common/graphics/renderer.cpp",
-      "sha256": "93f6c7961a73658467ab98cb035085f920ad09b40d95164c489492faa77aa05b",
-      "bytes": 150523
+      "sha256": "3b648d84cddf7849a83a88dab2eef403da675e54e39ba550efd0dec8ab88dcc7",
+      "bytes": 158656
     },
     {
       "path": "engine/common/graphics/renderer.h",
-      "sha256": "556500b4c6e0ab8ed7d9ee25ef7fc5cad2b248d977331e00e425ed7caa08e75d",
-      "bytes": 25547
+      "sha256": "35373b89fc1861d0f83ff50a7241a2b911ec0fbf7a451bb6cb618cbabf582316",
+      "bytes": 27028
     },
     {
       "path": "engine/common/graphics/rtscene.cpp",
@@ -1089,13 +1094,13 @@
     },
     {
       "path": "engine/common/graphics/shaders.cpp",
-      "sha256": "b4986f7b19bdc6806b1e530a6a56a0d5f8ff99bee47801ac62a07560e1bd8832",
-      "bytes": 32109
+      "sha256": "f7d83106a4a06544a79ebc219418d5518e81ec274915c89e021efa16f2d3991e",
+      "bytes": 32285
     },
     {
       "path": "engine/common/graphics/shaders.h",
-      "sha256": "0c9f1028c47270dbc86f16a635b1134d97bea1cd31f59f4be037fefef2c44228",
-      "bytes": 7709
+      "sha256": "44d4c53d4f8bc551f9d945ae8693474424a3b2a08ee7c9bc9a7b50529479877c",
+      "bytes": 7764
     },
     {
       "path": "engine/common/graphics/sky/sky.cpp",
@@ -1144,8 +1149,8 @@
     },
     {
       "path": "engine/common/mainwindow.cpp",
-      "sha256": "050a8d565d721282b8d544048e66b80eac96404f9524c10f608b14c68ae39ca9",
-      "bytes": 61628
+      "sha256": "0b82e2949ce01fd4b2490b9a7ab755cf20a32ddfa2bc97bedfcca7e4cb610545",
+      "bytes": 63563
     },
     {
       "path": "engine/common/mainwindow.h",
@@ -1174,8 +1179,8 @@
     },
     {
       "path": "engine/common/physics/dynamicworld.cpp",
-      "sha256": "c8b8425759eebded579046fd972a292fd7ed749891de38a1a9649b7a9054d74e",
-      "bytes": 49067
+      "sha256": "44dbdf90e4edd2107f8a6222f20bd9f10c4f784be43155f1942e6ca0f45ec24e",
+      "bytes": 49074
     },
     {
       "path": "engine/common/physics/dynamicworld.h",
@@ -1259,8 +1264,8 @@
     },
     {
       "path": "engine/common/ui/dialogmenu.cpp",
-      "sha256": "ce222015352ade3c3408a4e93523457c220e8fe03935ea917daf7e7af62fc15c",
-      "bytes": 14753
+      "sha256": "4d49304ab58872c7c48389f02b4238d0bd4628ea7c6edbc70cb8edf2ea7f4398",
+      "bytes": 15036
     },
     {
       "path": "engine/common/ui/dialogmenu.h",
@@ -1549,8 +1554,8 @@
     },
     {
       "path": "engine/common/utils/workers.cpp",
-      "sha256": "8560df0af9df7eaf20e0b5e5ae61cdfca88017735cc0c8ec197bcb960631f9a3",
-      "bytes": 5048
+      "sha256": "07c8fd0bb6b73a053069c7a357853251921005a9a87f84c34d21f03030c80d06",
+      "bytes": 5058
     },
     {
       "path": "engine/common/utils/workers.h",
@@ -1564,13 +1569,13 @@
     },
     {
       "path": "engine/common/vr/questxr.cpp",
-      "sha256": "2ff6a92a67cea5b5f295c4fecee5392d5d3d1126d311868d24d78802d304f14c",
-      "bytes": 71632
+      "sha256": "eb394ee29b6151f9bd4c01f2596ae809741e6627a17c7bc0a19780435fb33c59",
+      "bytes": 72710
     },
     {
       "path": "engine/common/vr/questxr.h",
-      "sha256": "eaad55e8b013c74a498d56225bb31e757cf7550ff61232a5aec36eab1e4aba01",
-      "bytes": 14010
+      "sha256": "c8346beaaedf1f74f8c86f7ff968afcfafd92c4a0eaa66c784c807bed405f483",
+      "bytes": 14269
     },
     {
       "path": "engine/common/vr/uxrh.h",
@@ -1579,8 +1584,8 @@
     },
     {
       "path": "engine/common/vr/vrassets.h",
-      "sha256": "e635fef5cedc578d44496b8590c5d48567d596d377d43f8b250eb5617f9a978e",
-      "bytes": 6636
+      "sha256": "6feaaaa7ac639fb5d02222ec842ff29ac7b29bec40a86f8ec92e1bd4db917113",
+      "bytes": 6630
     },
     {
       "path": "engine/common/vr/vrbakedlight.h",
@@ -1604,8 +1609,8 @@
     },
     {
       "path": "engine/common/vr/vrcontrols.h",
-      "sha256": "2f7caae7ac7895152715e55df088e5dbdf8e314061eeb67359ca58f4f49ff116",
-      "bytes": 42602
+      "sha256": "68e2d2eb7a2b7355325547a28b0b24bb4f321b9dad4ff070890b1013327ac011",
+      "bytes": 45376
     },
     {
       "path": "engine/common/vr/vrdefaults.h",
@@ -1628,6 +1633,11 @@
       "bytes": 4182
     },
     {
+      "path": "engine/common/vr/vrgroundmotion.h",
+      "sha256": "10decf783f9e05c3d7780035b48285892a94a57a890d1c296b18ba7c3f558ece",
+      "bytes": 940
+    },
+    {
       "path": "engine/common/vr/vrhandrenderer.cpp",
       "sha256": "63ed740a3f05ad78de5fd881a1dc8e4f51e1ef0aab1c4df3b7a210e3bed6f7ba",
       "bytes": 8874
@@ -1648,6 +1658,11 @@
       "bytes": 14997
     },
     {
+      "path": "engine/common/vr/vrjump.h",
+      "sha256": "ab447fe01bb6ea2e4f5f63b90733ec5b4652408b1854e314589a1485dec2bb14",
+      "bytes": 317
+    },
+    {
       "path": "engine/common/vr/vrplatform.h",
       "sha256": "54df02356344cd982817d075f0a0eb171d468527fdbc51e10e839cdebae4b2dd",
       "bytes": 5795
@@ -1656,6 +1671,11 @@
       "path": "engine/common/vr/vrprofiler.h",
       "sha256": "2a8fe21e1f4b9ab37db99789f0b32f520142e9394d13402d3941638728f74e7e",
       "bytes": 20161
+    },
+    {
+      "path": "engine/common/vr/vrratemap.h",
+      "sha256": "de84c641cf5ac2c9f0fd4a65fad3f6e794cdb996f8c19214019f1db0e4a1b518",
+      "bytes": 5429
     },
     {
       "path": "engine/common/vr/vrroomscale.h",
@@ -1669,8 +1689,8 @@
     },
     {
       "path": "engine/common/vr/vrshadowcache.h",
-      "sha256": "73990a9eab3308dc1a6b0325bb2ff54c12742912e651e305ce8f2d73edd82263",
-      "bytes": 10246
+      "sha256": "7e8c7a993f0d1d8f8f9a8a4f1fefa3a94c29e14d809b6a1eb8df23f298b1e8d7",
+      "bytes": 10467
     },
     {
       "path": "engine/common/vr/vrskyrate.h",
@@ -1693,19 +1713,24 @@
       "bytes": 4925
     },
     {
+      "path": "engine/common/vr/vrtaa.h",
+      "sha256": "479345236c9b6e96fe7db96f6b068d24498cdfaf0efe2f413cb78781cefad7a4",
+      "bytes": 774
+    },
+    {
       "path": "engine/common/vr/vrwelcome.h",
       "sha256": "3e1bbedb923068d3251a286831fab7a5277fb83883c4a0b85a89d245f7ab121d",
       "bytes": 738
     },
     {
       "path": "engine/common/vr/vrwindow.cpp",
-      "sha256": "6e8c690cce3f926082df667d5aeb5353bda20df10a2b4a368357c61bbd0e150a",
-      "bytes": 65598
+      "sha256": "3cdd9574f6cfd590dc917797f039ebf2ed8f7326850a17c3b9270a371199dee4",
+      "bytes": 67879
     },
     {
       "path": "engine/common/vr/xrmath.h",
-      "sha256": "c3c0eed462374b4fe878636cccd09dcc945f892442aeac237357b70e914370de",
-      "bytes": 2560
+      "sha256": "40a258f5af15f9e2f67a39bff78e8e09fbeb7e020c713bed4e07651ea8b5e2c7",
+      "bytes": 2600
     },
     {
       "path": "engine/common/world/aiqueue.cpp",
@@ -1779,13 +1804,13 @@
     },
     {
       "path": "engine/common/world/objects/interactive.cpp",
-      "sha256": "5311bc05139e137b166a8fafc65c796b068c89df41ef3a141f001c3a932ce5e6",
-      "bytes": 29138
+      "sha256": "ab3fd26662b278fd60a3b4069014a1914bdab785b9565e26a1eb556cae759840",
+      "bytes": 29314
     },
     {
       "path": "engine/common/world/objects/interactive.h",
-      "sha256": "2f45c16f5edc63e38da415a374a0abac68943a6b79d12585fabe16773c691e23",
-      "bytes": 6422
+      "sha256": "e92b2c8341aed3d598747e2261715b47f42cfb6e662ffb7667834bd1c14c5b81",
+      "bytes": 6426
     },
     {
       "path": "engine/common/world/objects/item.cpp",
@@ -1814,8 +1839,8 @@
     },
     {
       "path": "engine/common/world/objects/npc.h",
-      "sha256": "4a605693a991078cb89534d71b0f7a31af5801c42237fbcfc2ba5e4a20b34070",
-      "bytes": 25665
+      "sha256": "3b430b4beff900728b9bb9c0006b3eb7608f9cd3793630f0206cda93146cf97b",
+      "bytes": 26454
     },
     {
       "path": "engine/common/world/objects/pfxemitter.cpp",
@@ -10179,8 +10204,8 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/abstractgraphicsapi.h",
-      "sha256": "aed5f74d734ffc3bb77a8b18958e3d954413922ca50a3321f0894372b30e7df1",
-      "bytes": 25537
+      "sha256": "4ca3c25703db0145cbcc489a4fc91eea4462b9bbafe26e7de948fc2174b57705",
+      "bytes": 25769
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/descriptorallocator.h",
@@ -10614,13 +10639,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vallocator.cpp",
-      "sha256": "45a9469dfddd5c739be67d1738b26284828fecc71e1965e93e241eee4780ac9a",
-      "bytes": 20570
+      "sha256": "98086a898b822ee569c6388d0695c8d62b09558cfd188cb9bafd727cf0d43c69",
+      "bytes": 20729
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vallocator.h",
-      "sha256": "ef40663f76c759878dcbb68b27eee758e1f681a98c6c92aa345456821b2c6851",
-      "bytes": 2509
+      "sha256": "3b74cb5ab9c5fe9d68142868580d4e77b0be8e6019a2119777d53d934d0f3c60",
+      "bytes": 2538
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vbuffer.cpp",
@@ -10634,13 +10659,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vcommandbuffer.cpp",
-      "sha256": "c0e2335db043059409768f963d930f4c65f95f67cd5a2df52494326c61e7ee4c",
-      "bytes": 52958
+      "sha256": "64cb068f7938368f0d48ccd27060f66eeb2de19fcf132dde4b33c67d0af5538d",
+      "bytes": 53845
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vcommandbuffer.h",
-      "sha256": "df680b767cc4a423832c5cbffd2939444afc655d775b1958a20a2fc5eede9736",
-      "bytes": 9083
+      "sha256": "dd5380cb3e28629dae180190009aceaf610adad1237f41998463e00837033423",
+      "bytes": 9079
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vcommandpool.cpp",
@@ -10674,13 +10699,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vdevice.cpp",
-      "sha256": "7a42fb68a72f9f82a72af8b7e9d2e4c836cbc13661a50b4db8e774b5082be3a5",
-      "bytes": 56877
+      "sha256": "9d657ee68d40a30592d0e885dc13bba0fc6d6026121d993f3529690fc76e965a",
+      "bytes": 59622
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vdevice.h",
-      "sha256": "58519cb5f0f66bdaa2bacabb060ccb0f9e61a73e6e246b70e095afbfe2870197",
-      "bytes": 19394
+      "sha256": "f7e3f784a5803c54aacb190823e1ab71cc9f107a3daf994c4bd02b6add25f699",
+      "bytes": 19434
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vfence.cpp",
@@ -10704,13 +10729,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vpipeline.cpp",
-      "sha256": "5ad92422fa32b8501a298d221331b47cb21bd0608ac3097c7278f958d3e3f2c5",
-      "bytes": 23950
+      "sha256": "f4e25ce20906e4f01ddea85e256eb706aa33c789efd79e56314261aaaf80b780",
+      "bytes": 24528
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vpipeline.h",
-      "sha256": "cb221b64f4507ab4dc7c3234908a59eb1179f31dd7d1483b13384462df462e19",
-      "bytes": 6397
+      "sha256": "22ffea3218ac8a5c9d06c6b3117edbd0c458548a252663faaf3049c287914905",
+      "bytes": 6557
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vpoolcache.cpp",
@@ -10784,13 +10809,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vtexture.cpp",
-      "sha256": "256977d98b5dff6e87a9133e7bacf146ae80fea05cb8574e1f7e2848544c2040",
-      "bytes": 6534
+      "sha256": "cee23a32d2522904eb9dc81a80dab75810a9df99fb38af0ea6785608e891c354",
+      "bytes": 6680
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vtexture.h",
-      "sha256": "4744983db6668145ca7d718e0cca843d99c211da43973d98fc351ad94875cfe5",
-      "bytes": 2462
+      "sha256": "59251df7a210e0b82091ff10d0bf3e1160d7104e1c75ac7a435942cc4b2e0238",
+      "bytes": 2513
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkan/vulkan_sdk.h",
@@ -10799,13 +10824,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkanapi.cpp",
-      "sha256": "85ed5004464a68c397a4ee270c10a67a190ee49e607761dae6d9fe1a1c55d6a3",
-      "bytes": 24004
+      "sha256": "c941f32a96d0c00c2e23cf91d791dcc429c37a5bd427547730f00cc28193e763",
+      "bytes": 25650
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkanapi.h",
-      "sha256": "a0ceb3fe92e222b220363f98f68a7020c060df8ffa30a9a3256739fea0f9487f",
-      "bytes": 3356
+      "sha256": "e9adb8634a7f0dfea5cc0e3dfb5daf1cf83dc42e89e5aa13c340d6388d1e34b0",
+      "bytes": 3442
     },
     {
       "path": "engine/lib/Tempest/Engine/gapi/vulkaninterop.h",
@@ -10874,13 +10899,13 @@
     },
     {
       "path": "engine/lib/Tempest/Engine/graphics/device.cpp",
-      "sha256": "a6d3eca47cf5ec8583eb5d70ebcb8362b55fb15c59f52c69ca8cc582e92d4beb",
-      "bytes": 14145
+      "sha256": "a9d18c618d0b1fbc5a26ffd5a44ee6b65f86fe81a277adc565fd33d3bdf1c94b",
+      "bytes": 14924
     },
     {
       "path": "engine/lib/Tempest/Engine/graphics/device.h",
-      "sha256": "58a898d92bbf52d264130d91e4770434b9ea7c0771d2b970cb231c9577031f56",
-      "bytes": 11281
+      "sha256": "d216b677b083da8504516c3f9915037bb8ef5143452fdee850bd61a15790fc07",
+      "bytes": 11349
     },
     {
       "path": "engine/lib/Tempest/Engine/graphics/encoder.cpp",
@@ -18679,8 +18704,8 @@
     },
     {
       "path": "engine/shader/CMakeLists.txt",
-      "sha256": "9cb087c02e9094d13b3d678f4de5484bbd3682da259954121a3eb77c3b2df225",
-      "bytes": 26097
+      "sha256": "871ad770c32f6bdb8bf16774c9448a36bbdce508441f78b6bd2d63ee61cd2cce",
+      "bytes": 26199
     },
     {
       "path": "engine/shader/common.glsl",
@@ -19096,6 +19121,16 @@
       "path": "engine/shader/lighting/unlit.frag",
       "sha256": "db804939159cc9c8d37c45443bfb9d54c200f004cc8d4cebfd478dd1688824ee",
       "bytes": 449
+    },
+    {
+      "path": "engine/shader/lighting/vr_taa.frag",
+      "sha256": "047a953ec797c13f023e007f18a18381ad6f849db41c04fcdeb9f8dfa70095e5",
+      "bytes": 7215
+    },
+    {
+      "path": "engine/shader/lighting/vr_taa_apply.frag",
+      "sha256": "2dd278b41d90244ccae4e07e1d9fd3f85f644b84294614c849709307f5c92f8b",
+      "bytes": 2180
     },
     {
       "path": "engine/shader/link_shaders.cmake",
@@ -19638,19 +19673,24 @@
       "bytes": 130
     },
     {
+      "path": "INSTALL-WIN7.bat",
+      "sha256": "2f820972d86d7ec303e08602aafda474af98bb37306b530c1cb05e11fd25a21c",
+      "bytes": 65
+    },
+    {
       "path": "INSTALL.bat",
       "sha256": "86cb8a45394382ba2502097e6d6f08aaa08d24e8ba68020fa5921df912d862be",
       "bytes": 231
     },
     {
       "path": "INSTALL.md",
-      "sha256": "154cd84cfed0e4dbff3b9487fae82382dbafcfd7aa81e2eb54ed782b94a5c236",
-      "bytes": 6263
+      "sha256": "aab26b4787b150ca954dcc0309c2383b3c82754b123aea9cc1b5196be18246e7",
+      "bytes": 1787
     },
     {
       "path": "KNOWN_ISSUES.md",
-      "sha256": "5b907524f752b031e75fad39debc93b906d4006f03f9d75da91a26ea4944a723",
-      "bytes": 6513
+      "sha256": "7d992851729519136e14d6f5032791ae21dd6e5f4bd9717622da540b75de10be",
+      "bytes": 6690
     },
     {
       "path": "LICENSE",
@@ -19676,6 +19716,11 @@
       "path": "OPEN-DATA-IMPORT.bat",
       "sha256": "9af20280542bd383d2fe0a9c701fb7d67081d57d85f71c8a0c3c3bf10e65e7d1",
       "bytes": 133
+    },
+    {
+      "path": "PACKAGE-GAME-DATA-WIN7.bat",
+      "sha256": "692f28ea7b5fa4c24f2be7ab83b3712c727a70349ca5171c6a826b230e886214",
+      "bytes": 80
     },
     {
       "path": "PACKAGE-GAME-DATA.bat",
@@ -19734,13 +19779,18 @@
     },
     {
       "path": "README.md",
-      "sha256": "4e4a30e2a1c7c0fa4344d4ecbb606c539cd708f38b051a470377ae5b68ba23d3",
-      "bytes": 8309
+      "sha256": "5fd82ef04b0df19eb01ee805d729c5821a31e65aa35a30f93beed088c968fc98",
+      "bytes": 2639
+    },
+    {
+      "path": "RELEASE-NOTES.md",
+      "sha256": "257306497577853932c7bd019bc5b47d7a2b843694f253676fb869e725328ef4",
+      "bytes": 2015
     },
     {
       "path": "RELEASE_REVIEW.md",
-      "sha256": "74d5ed2450f9febab87f335b2b951e6378f4aff7a43e851639e06becfa762876",
-      "bytes": 1980
+      "sha256": "1c4ee00a50c82303fe8a3ee1bbb9c3765aae4b531f26178b0394fe590446805d",
+      "bytes": 1109
     },
     {
       "path": "SETUP-DEPENDENCIES.bat",
@@ -19748,19 +19798,14 @@
       "bytes": 221
     },
     {
-      "path": "STEAMVR-FLICKER-INVESTIGATION.md",
-      "sha256": "c86b9b7995428963d5bc7b93e9f7f9ad58810d487e8d7a8b442ead7ac317c760",
-      "bytes": 1262
-    },
-    {
       "path": "TECHNICAL-OVERVIEW.md",
-      "sha256": "efd733ee8cb198f4691daa553647848ee20d680966c193b4e295a0960cbcd342",
-      "bytes": 25607
+      "sha256": "65cf3c3c5b61fad46353757183529e01cf7264f6b77d0442d3461bef9f2fb4bb",
+      "bytes": 26094
     },
     {
       "path": "tests/bow-regressions.py",
-      "sha256": "269e068b1caa511b47da5ec683d36c11e2a74588a66ce9d97b0babcd1c3b7aab",
-      "bytes": 5725
+      "sha256": "946f566b16a2d48d7ba962e61b10c6d3a79693e8846c736531dcfef8705dd5f2",
+      "bytes": 5819
     },
     {
       "path": "tests/calibration.py",
@@ -19774,13 +19819,18 @@
     },
     {
       "path": "tests/camera-yaw.py",
-      "sha256": "f963f7a9afdf7c61cb467165cf51b857a4367931022a86b55a565fffea967d79",
-      "bytes": 7102
+      "sha256": "004dd411b00f4d4177aa58ee4732888a9eb312683e749ef04499bf06b4720478",
+      "bytes": 7851
     },
     {
       "path": "tests/combat.py",
       "sha256": "cc3348e34fc44d87e10ee16c2c1b61960c109adb7928617ff8a360e1775d5c78",
       "bytes": 8131
+    },
+    {
+      "path": "tests/cutscene-motion.cpp",
+      "sha256": "e3675746780d79f68bee99a9a9a00e71ce61b89553f4ae551c79857c55f7c08a",
+      "bytes": 2915
     },
     {
       "path": "tests/focus.py",
@@ -19789,13 +19839,18 @@
     },
     {
       "path": "tests/gameplay-regressions.py",
-      "sha256": "a28b54f834ab0d40dcd837a932c6f3ca188aa69b5c58f6968df74c1646c45826",
-      "bytes": 11015
+      "sha256": "153c6d1e890be94243cabf1414ff69f7c7dc209b262c416adbd5896dec1c2204",
+      "bytes": 11199
     },
     {
       "path": "tests/grip-regressions.py",
-      "sha256": "dd5f32ea321df68f1bf2eacae70b3e48a3f7c44c6f19d6ecfdc7830d292d0807",
-      "bytes": 12022
+      "sha256": "52492f697dd2cff82796aa12ee16b131aaa4c962b97fdf6478f60156a6ecf14f",
+      "bytes": 12157
+    },
+    {
+      "path": "tests/ground-motion.py",
+      "sha256": "1830bc0a8feb9067aafc2b2c3b1c854ddefecb0db839adfcc2af6754d05ca8da",
+      "bytes": 3934
     },
     {
       "path": "tests/hud-extent.cpp",
@@ -19804,8 +19859,8 @@
     },
     {
       "path": "tests/hud-regressions.py",
-      "sha256": "187eb9a85f835e47f96c47a9b3019efdd755bc3ace4b01a23fcea04c2f52e385",
-      "bytes": 6894
+      "sha256": "150406da9123abd3bb4b7a2dae434fb4691752ef129833a4433c471ae917b98d",
+      "bytes": 6969
     },
     {
       "path": "tests/installers.ps1",
@@ -19819,13 +19874,13 @@
     },
     {
       "path": "tests/melee-regressions.py",
-      "sha256": "41f8f39b5d54766b89a080ad54b2da846801c5f034a5a64ba415b7049f90a1c8",
-      "bytes": 8583
+      "sha256": "0b9d184d266e894b2bd63d633f8368c01e2982461c17b7beb86509704928cf67",
+      "bytes": 8700
     },
     {
       "path": "tests/menu-input.py",
-      "sha256": "ba5b987171610f89d1e83c2e9ef41e280848168ac2015a04fc8b201ff69e18f1",
-      "bytes": 3303
+      "sha256": "4574ce885980533bd2681cd2218d9a0336dfdf3412ad177e482384270a75728d",
+      "bytes": 4401
     },
     {
       "path": "tests/menu-shortcuts.cpp",
@@ -19853,14 +19908,19 @@
       "bytes": 4132
     },
     {
+      "path": "tests/rdr-render.cpp",
+      "sha256": "8c9c0a446d7602eda1ba1655a95d89ec54b23fd502795df10dcad1d42fd2d97a",
+      "bytes": 2284
+    },
+    {
       "path": "tests/README.md",
-      "sha256": "0c924fde7c383d067728141a0a307861fbb2401ff514b33e2594ac24bb3d878d",
-      "bytes": 1569
+      "sha256": "3b411a58bdf6cd892aa19a39a51ab7174c10913702290ef1b48a514c2e886bfd",
+      "bytes": 1559
     },
     {
       "path": "tests/release-defaults.cpp",
-      "sha256": "b4417d43a0f6cc2d51a55cdbedd4bf95291b7f0d22080ec91086daf54cf32f45",
-      "bytes": 3397
+      "sha256": "bae1d964a664e30cebe94909ac75353d1433e5b45e23498d266bb741f2ede0a0",
+      "bytes": 3455
     },
     {
       "path": "tests/sky.py",
@@ -19888,14 +19948,24 @@
       "bytes": 4661
     },
     {
+      "path": "tests/taa-reprojection.cpp",
+      "sha256": "f148617c8e0e76d6081020846db6bb4ef5554190bf1c14bc059ab35b888f2d63",
+      "bytes": 2369
+    },
+    {
       "path": "tests/vrcontrols.cpp",
-      "sha256": "281c07785d3926b70f89b66bacb6c1f1c35f5e45382406b6dfe6ab1a45a0b59f",
-      "bytes": 36568
+      "sha256": "e20811edc98380a665b67b7c3357c96fcd9e97a86c6085274de21c25ede5c50f",
+      "bytes": 36990
     },
     {
       "path": "tests/vrinteraction.cpp",
-      "sha256": "30f0238d762b99a9536eee345716a957617a2bbca75dc90fdd92b89ad4ffad97",
-      "bytes": 52076
+      "sha256": "54c5d43581d1fda6a3b9ec6260095c1dcb43f932a9647c10be211183ec4f8805",
+      "bytes": 52074
+    },
+    {
+      "path": "tests/win7-installer.py",
+      "sha256": "3673c3f3957b46a844af0b53020bcb7bea55ecbb78e01d9e70f2fe0e8924b61a",
+      "bytes": 8062
     },
     {
       "path": "tests/xrmath.cpp",
@@ -19904,8 +19974,8 @@
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "bf74b113ca200f44b47206bafbda5270459f87530a6a2215a788e8640088fa59",
-      "bytes": 4394
+      "sha256": "40425780897d50db308909eac5491547db893eee7579fa3f9b95408d91a404a6",
+      "bytes": 4389
     },
     {
       "path": "tools/audit-source-kit.ps1",
@@ -19914,8 +19984,8 @@
     },
     {
       "path": "tools/audit-source-kit.py",
-      "sha256": "22a1b5405f4633e19e5571050f64ef086e6a27abc3da06e16ed431200086c174",
-      "bytes": 6032
+      "sha256": "043af3ee7a7bacc9e2190fbe9e1698738647d1db3bd80b216a3aa01797e55185",
+      "bytes": 6036
     },
     {
       "path": "tools/bootstrap-dependencies.py",
@@ -19948,6 +20018,11 @@
       "bytes": 1913
     },
     {
+      "path": "tools/install-win7.py",
+      "sha256": "2b9ef47b23c92908a72c22409089f4af222008f8e2e6ed6e2e057ad27c282978",
+      "bytes": 10073
+    },
+    {
       "path": "tools/open-data-import.ps1",
       "sha256": "330570dfa2c71b3a5e9b340d7c35a2e8f6c5a23b5a93d7f52814425dc06a0f59",
       "bytes": 552
@@ -19959,8 +20034,18 @@
     },
     {
       "path": "tools/package-game-data.py",
-      "sha256": "762da783743dc0509f70703924ced91c20caf894753d2aa21512f9ad819e0740",
-      "bytes": 2871
+      "sha256": "14f445cb1b2e18b6cce505aa39e2712ef49d8c346e0fcf794402fe360bfba1af",
+      "bytes": 2883
+    },
+    {
+      "path": "tools/package-source-release.py",
+      "sha256": "d0372d44faa1a0013b41cdceb705bbe87b436e5dc70a8ef0b168403146aa8f67",
+      "bytes": 2859
+    },
+    {
+      "path": "tools/package-win7-release.py",
+      "sha256": "a9055a056b087249a2281a1f0d196cf312f77a3460f382b44dda9e4e79b7fef9",
+      "bytes": 5143
     },
     {
       "path": "tools/prepare-dependencies.ps1",
@@ -19983,24 +20068,29 @@
       "bytes": 73
     },
     {
+      "path": "tools/run-win7.cmd",
+      "sha256": "233b7cb84340a51f7f988d4d2a3e325f3c3806633d4ca1242efc42674dd4bfca",
+      "bytes": 567
+    },
+    {
       "path": "tools/setup-dependencies.ps1",
       "sha256": "95f0de806794d1b9864f375b139d9ae1a455fb6d93b307093109c43f1a040f73",
       "bytes": 692
     },
     {
       "path": "tools/test-source-kit-audit.py",
-      "sha256": "abc4950229eeaa497c11a2162f0cb182f5f0dc1305f67ddddf5c62613d104df2",
-      "bytes": 3463
+      "sha256": "078bac50d3d6b1b010785870af4b33baa544dcb344b67cd5fe3bd88b9565f3fa",
+      "bytes": 3530
     },
     {
       "path": "tools/test-vr-source.py",
-      "sha256": "006c803ed35899b02ff67f59a4facf61dd8bdfd7ac45238f9469c23c28a398d1",
-      "bytes": 8381
+      "sha256": "41d3bc641833aa431ec23b5e1b0c7994e30d802351f5576b980c4ee2729cd49d",
+      "bytes": 8779
     },
     {
       "path": "tools/verify-android.py",
-      "sha256": "26c8c19459a8afdfaf9cacbe6bc211367e45fc329d0cfbd277f7233d8dbfaa8f",
-      "bytes": 8302
+      "sha256": "06c27780e9cd50aee4808b9338cd6a04773478e37c1042c869418cff15a81071",
+      "bytes": 8458
     },
     {
       "path": "tools/verify-apk.ps1",
@@ -20013,6 +20103,11 @@
       "bytes": 3160
     },
     {
+      "path": "UPDATE-WIN7.bat",
+      "sha256": "f657ec77a4aae7334e56b6fe78e61de87e73263b3c2c9df39c4a16b31643db81",
+      "bytes": 79
+    },
+    {
       "path": "UPDATE.bat",
       "sha256": "40b9df82377bff0604fc95f81781ad5670cd102adf8ff8afb9644eb19a1785b1",
       "bytes": 237
@@ -20021,6 +20116,11 @@
       "path": "VERIFY-APK.bat",
       "sha256": "12161a57610403d924a55502ddfc1ae441514c3b449cf54641a36818c9a148de",
       "bytes": 127
+    },
+    {
+      "path": "WINDOWS7.md",
+      "sha256": "6752d7da88894ed059d12d6a9f04db2e5060379b2e2b3101c786e5854fb3e49b",
+      "bytes": 4165
     }
   ]
 }

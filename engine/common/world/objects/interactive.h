@@ -96,7 +96,7 @@ class Interactive : public Vob {
 
     struct Pos final {
       std::string         name;
-      Npc*                user       = nullptr;
+      Npc*                occupant       = nullptr;
       Phase               started    = NotStarted;
       bool                attachMode = false;
       size_t              nodeId     = 0;

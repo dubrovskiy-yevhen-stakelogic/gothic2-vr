@@ -116,4 +116,4 @@ Four `[ENGINE]` keys matter on this target. `vrBlankFrame` and `vrMirrorOff` are
 | `vrMaxEyeWidth` | `1280` | Per-eye render width cap. Every full-resolution render target is sized from it. `0` or less keeps 1280. Raise it for sharpness at the cost of VRAM and frame time. |
 | `vrMaxEyeHeight` | off | Extra height cap for runtimes that recommend an unusually tall eye image. Aspect is preserved, so the width shrinks with it. |
 
-The Windows release is in the **PCVR** folder of **Gothic-II-VR-0.2.0-PCVR-and-Quest.zip**. When preparing a PCVR folder from your own build, also copy the contents of `pcvr/` beside the executable for the runtime-selecting launchers. The standalone APK and its installer occupy the separate **Quest** folder in the same archive.
+For a PCVR build, copy the contents of `pcvr/` beside the executable to add the runtime-selecting launchers. The 0.2.1 release package contains the Quest APK and installer; PCVR sources are included in the source archive. A new PCVR binary is not included.

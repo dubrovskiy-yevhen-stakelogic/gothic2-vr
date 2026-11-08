@@ -58,7 +58,7 @@ def check(root, allow_local_state=False):
     for rel in allowed_binary:
         if rel not in actual:
             errors.append(f'Missing licensed resource: {rel}')
-    # Check user-facing local links; historical upstream docs keep their own context.
+    # Check release documentation links; historical upstream docs keep their own context.
     for path in sorted(root.glob('*.md')):
         for target in re.findall(r'\]\(([^\s)]+)(?:\s+"[^"]*")?\)', path.read_text(encoding='utf-8-sig')):
             if '://' in target or target.startswith('#'):

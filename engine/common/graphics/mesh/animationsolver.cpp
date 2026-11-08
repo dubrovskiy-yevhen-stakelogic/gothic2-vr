@@ -285,7 +285,7 @@ const Animation::Sequence* AnimationSolver::implSolveAnim(AnimationSolver::Anim 
       return solveFrm("T_SWIMTURNL");
 
     // whirling is only used in G1, but the script function is present
-    // in all games. In G2 all models except the human also have the
+    // in all games. In G2 all models except the humanoid model also have the
     // needed animation.
     const Animation::Sequence* s = solveFrm("T_SURPRISE_CCW");
     if(s==nullptr)

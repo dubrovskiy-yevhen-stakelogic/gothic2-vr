@@ -7,6 +7,8 @@
 #include "world/objects/interactive.h"
 #include "world/world.h"
 #include "serialize.h"
+#include "vr/vrjump.h"
+#include "vr/vrgroundmotion.h"
 
 const float   MoveAlgo::closeToPointThreshold = 40;
 const float   MoveAlgo::climbMove             = 55;
@@ -20,6 +22,8 @@ MoveAlgo::MoveAlgo(Npc& unit)
   }
 
 void MoveAlgo::load(Serialize &fin) {
+  vrGroundInput=false; vrStickVelocity={};
+  vrGroundVelocity={}; vrJumpActive=false; vrJumpLatched=false;
   fin.read(reinterpret_cast<uint32_t&>(flags));
   fin.read(mulSpeed,fallSpeed,fallCount,climbStart,climbPos0,climbHeight);
   fin.read(reinterpret_cast<uint8_t&>(jmp));
@@ -159,11 +163,17 @@ void MoveAlgo::tick(uint64_t dt, MvFlags moveFlg) {
 
   const bool trace=npc.isPlayer() && vrSwim.input.enabled;
   const auto before=flags;
-  const auto posBefore=trace ? npc.position() : Tempest::Vec3();
+  const auto posBefore=npc.position();
   const auto physBefore=trace ? npc.physic.position() : Tempest::Vec3();
   const auto animBefore=trace ? npc.animMoveSpeed(dt) : Tempest::Vec3();
   vrWaterReason="native";
   const bool moved=implTick(dt,moveFlg);
+#if defined(GOTHIC2VR_OPENXR)
+  if(npc.isPlayer() && before==Run && flags==Run && npc.bodyStateMasked()!=BS_JUMP && dt>0) {
+    vrGroundVelocity=(npc.position()-posBefore)/float(dt);
+    vrGroundVelocity.y=0;
+  }
+#endif
   if(trace) traceVrWater(dt,before,posBefore,physBefore,animBefore);
   if(!moved)
     return;
@@ -221,6 +231,20 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
   if(vrSwimming() && npc.isPlayer() && !npc.isDown())
     return tickVrSwim(dt);
 
+#if defined(GOTHIC2VR_OPENXR)
+  // Only free jumps change: ledge grabs/climbing and scripted NPC movement retain
+  // their native paths. Capture launch momentum; head turns cannot steer midair.
+  if(npc.bodyStateMasked()!=BS_JUMP) vrJumpLatched=false;
+  if(npc.isPlayer() && !npc.isDown() && flags==Run && !vrJumpLatched &&
+     npc.bodyStateMasked()==BS_JUMP && npc.isFlyAnim()) {
+    fallSpeed=vrGroundVelocity;
+    fallSpeed.y=Vr::jumpLaunchSpeed(gravity);
+    fallCount=0;
+    vrJumpActive=true;
+    vrJumpLatched=true;
+    setState(InAir);
+  }
+#endif
   const auto state = flags;
   const bool dead  = npc.isDead();
   const bool swim  = (state==Swim);
@@ -228,7 +252,8 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
   const bool grav  = (state==InAir || state==Falling || state==JumpUp);
   const auto bs    = npc.bodyStateMasked();
   const auto pos0  = npc.position();
-  const auto dp    = (!grav && state!=Slide) ? npcMoveSpeed(dt,moveFlg) : npcFallSpeed(dt);
+  auto dp         = (!grav && state!=Slide) ? npcMoveSpeed(dt,moveFlg) : npcFallSpeed(dt);
+  if(vrJumpActive && grav) dp.y=Vr::jumpDisplacement(fallSpeed.y,gravity,float(dt));
   const bool walk  = bool(npc.walkMode() & WalkBit::WM_Walk) && (state==Run);
 
   DynamicWorld::CollisionTest info;
@@ -240,7 +265,11 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
       setState(InAir);
       }
     else if(grav) {
-      onGravityFailed(info,dt);
+      if(vrJumpActive) {
+        // Slide along a wall/ceiling without reflecting upward into another jump.
+        const float into=Tempest::Vec3::dotProduct(fallSpeed,info.normal);
+        if(into<0) fallSpeed-=info.normal*into;
+      } else onGravityFailed(info,dt);
       }
     else if(swim) {
       // Khorinis port hack
@@ -290,7 +319,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
     dY      = std::min((pos.y+chest)-water, stickThreshold);
     }
 
-  if(dp==Tempest::Vec3() && pos.y==ground && state!=Jump && state!=Slide)
+  if(dp==Tempest::Vec3() && pos.y==ground && state!=Jump && state!=Slide && !vrJumpActive)
     return false;
 
   // jump animation (lift off)
@@ -389,7 +418,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
     }
 
   // above ground/void
-  if(!gValid || (pos.y>ground && dY >= stickThreshold && state!=InWater)) {
+  if(!gValid || (vrJumpActive && fallSpeed.y>0) || (pos.y>ground && dY >= stickThreshold && state!=InWater)) {
     vrWaterReason="native-no-support";
     if(!gValid && swim) {
       // sea monster condition?
@@ -461,6 +490,7 @@ bool MoveAlgo::implTick(uint64_t dt, MvFlags moveFlg) {
   if(state==InAir || state==Falling) {
     // attach to ground
     npc.takeFallDamage(fallSpeed);
+    if(vrJumpActive) npc.setAnim(Npc::Anim::Idle);
     setState(Run);
     }
 
@@ -672,6 +702,16 @@ Tempest::Vec3 MoveAlgo::animMoveSpeed(uint64_t dt) const {
   }
 
 Tempest::Vec3 MoveAlgo::npcMoveSpeed(uint64_t dt, MvFlags moveFlg) {
+#if defined(GOTHIC2VR_OPENXR)
+  const auto bs=npc.bodyStateMasked();
+  const bool freeGround=flags==Run && (bs==BS_STAND || bs==BS_WALK || bs==BS_RUN || bs==BS_SPRINT || bs==BS_SNEAK);
+  if(vrGroundInput && npc.isPlayer() && !npc.isDown() && freeGround &&
+     npc.go2.npc==nullptr && npc.go2.wp==nullptr && npc.go2.flag==Npc::GT_No) {
+    // Replace root-animation displacement, not collision handling. A centred
+    // stick is an owned zero, so the stop animation cannot push the capsule.
+    return Vr::groundDisplacement(vrStickVelocity,float(dt)/1000.f,mulSpeed*(bs==BS_SNEAK?.5f:1.f));
+  }
+#endif
   auto dp = animMoveSpeed(dt);
   if(moveFlg!=WaitMove) {
     if(npc.go2.npc)
@@ -949,6 +989,7 @@ void MoveAlgo::setState(State f) {
 
   if(isFlyLike(flags) && !isFlyLike(f)) {
     clearSpeed();
+    vrJumpActive=false;
     }
 
   if((f==Swim) && !(flags==Swim)) {

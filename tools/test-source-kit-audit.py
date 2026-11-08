@@ -21,7 +21,7 @@ class PublicationGuards(unittest.TestCase):
         (self.root / 'config').mkdir()
         (self.root / 'config/distributable-assets.json').write_text('{"files":[]}', encoding='utf-8')
         (self.root / 'android').mkdir()
-        (self.root / 'android/CMakeLists.txt').write_text('VERSION_NAME 0.0.48-batch1\n', encoding='utf-8')
+        (self.root / 'android/CMakeLists.txt').write_text('VERSION_NAME 0.2.1\n', encoding='utf-8')
 
     def run_audit(self, *args):
         return subprocess.run([sys.executable, '-B', str(AUDITOR), '--root', str(self.root), *args],

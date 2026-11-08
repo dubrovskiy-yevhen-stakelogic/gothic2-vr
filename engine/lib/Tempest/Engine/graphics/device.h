@@ -132,6 +132,7 @@ class Device {
 
     Texture2d             texture    (const Pixmap& pm, const bool mips = true);
     // VK_EXT_fragment_density_map: RG8 map of the shading rate per texel; empty texture when unsupported.
+    Texture2d             fragmentShadingRateMap(const Pixmap& pm);
     Texture2d             fragmentDensityMap(const Pixmap& pm);
     Attachment            attachment (TextureFormat frm, const uint32_t w, const uint32_t h, const bool mips = false);
     ZBuffer               zbuffer    (TextureFormat frm, const uint32_t w, const uint32_t h);

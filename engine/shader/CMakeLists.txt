@@ -306,6 +306,8 @@ add_shader(light_vsm.frag            lighting/light.frag -DVIRTUAL_SHADOW)
 add_shader(irradiance.comp           lighting/irradiance.comp)
 add_shader(sky_exposure.comp         lighting/sky_exposure.comp)
 
+add_shader(vr_taa.frag lighting/vr_taa.frag)
+add_shader(vr_taa_apply.frag lighting/vr_taa_apply.frag)
 add_shader(tonemapping.frag          lighting/tonemapping.frag)
 add_shader(tonemapping_up.frag       lighting/tonemapping.frag -DUPSCALE)
 add_shader(tonemapping_fog.frag      lighting/tonemapping_fog.frag)

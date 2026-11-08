@@ -32,6 +32,14 @@ def child_ci(path, name):
     return next((p for p in Path(path).iterdir() if p.name.casefold() == name.casefold()), None)
 
 
+def path_within(path, parent):
+    try:
+        Path(path).relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
 def validate_game(root):
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
@@ -116,7 +124,7 @@ def game_files(root):
                 continue
             if path.name.endswith(".og-extract-part"):
                 raise ValueError(f"Reserved extraction temporary filename: {path}")
-            if not path.resolve().is_relative_to(root):
+            if not path_within(path.resolve(), root):
                 raise ValueError(f"File leaves game directory: {path}")
             relative = path.relative_to(folder).as_posix()
             if any(c in relative for c in "\t\r\n\\:"):
@@ -126,7 +134,7 @@ def game_files(root):
     system = child_ci(root, "System")
     config = child_ci(system, "GothicGame.ini") if system else None
     if config and config.is_file():
-        if config.is_symlink() or not config.resolve().is_relative_to(root):
+        if config.is_symlink() or not path_within(config.resolve(), root):
             raise ValueError(f"System configuration must be inside the installation: {config}")
         result.append(("Gothic2/System/GothicGame.ini", config))
     # No executables, Saves, SystemPack.ini or desktop Gothic.ini are copied.

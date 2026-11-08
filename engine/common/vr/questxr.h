@@ -104,6 +104,9 @@ class QuestXr final {
     // Both eyes render straight into their XR images (no vrOutput copy).
     bool directOutputReady() const { return directOutputRequested && !eyes[0].targets.empty() && !eyes[1].targets.empty(); }
     Tempest::Matrix4x4 headView(const Tempest::Matrix4x4& base) const;
+    void setSceneTracking(bool enabled,int mode);
+    Tempest::Matrix4x4 sceneHeadView(const Tempest::Matrix4x4& base) const;
+    Tempest::Matrix4x4 sceneEyeView(uint32_t eye,const Tempest::Matrix4x4& base) const;
     void setWorldScale(float scale) { unitsPerMeter=100.f/scale; }
     void recenter();
     void setCinema(bool enabled) { cinemaRequested=enabled; }
@@ -166,7 +169,8 @@ class QuestXr final {
     XrSessionState state=XR_SESSION_STATE_UNKNOWN;
     bool running=false,begun=false,exitRequested=false,trackingValid=false,referenceValid=false;
     XrTime displayTime=0;
-    XrMath::Pose referencePose,headPose;
+    XrMath::Pose referencePose,headPose,sceneReference;
+    int sceneTrackingMode=-1;
     bool cinemaRequested=false;
     XrMath::CinemaAnchor cinemaAnchor;
     struct { int x=0,y=0,w=0,h=0; } hudRect;

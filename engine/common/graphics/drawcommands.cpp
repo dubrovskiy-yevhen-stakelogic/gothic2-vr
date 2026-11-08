@@ -143,7 +143,7 @@ void DrawCommands::setBindings(Tempest::Encoder<CommandBuffer>& cmd, const DrawC
 
   // Virtual shadow map bindings only: the VR cached shadow also draws through
   // the V_Vsm view with the plain shadow pipelines, and vsmPageList/lights are
-  // null there (0.0.34 crashed on them).
+  // null there.
   if(v==SceneGlobals::V_Vsm && scene.vsmEnabled) {
     cmd.setBinding(L_CmdOffsets, views[v].indirectCmd);
     cmd.setBinding(L_VsmPages,   *scene.vsmPageList);
@@ -420,7 +420,7 @@ void DrawCommands::visibilityPass(Encoder<CommandBuffer>& cmd, int pass, bool sk
       // VR static shadow map: one contiguous cluster range per frame. Balanced
       //: the renderer's range, sized by the casters inside the
       // map; the last slice also takes clusters appended since the cycle began.
-      // Otherwise the raw index split of 0.0.37.
+      // Otherwise the raw index split.
       uint32_t first=0, last=0;
       const uint32_t total = uint32_t(clusters.size());
       if(scene.vrStaticShadowBalanced) {

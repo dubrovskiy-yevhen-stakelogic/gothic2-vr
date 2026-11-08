@@ -132,7 +132,7 @@ class VCommandBuffer:public AbstractGraphicsApi::CommandBuffer {
 
     struct PipelineInfo:VkPipelineRenderingCreateInfoKHR {
       VkFormat colorFrm[MaxFramebufferAttachments];
-      bool     fdm = false; // pass has a fragment density map attachment
+      int      fdm = 0; // pass has a fragment density map attachment
       };
 
     struct Push {

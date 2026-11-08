@@ -74,7 +74,9 @@ bool MainWindow::tickVrMenu(const GamepadState& pad,uint64_t now) {
     return true;
   }
   Vr::Input in;
+  in.menuHoldMs=controllerBindings.options.holdMs;
   in.focused=pad.connected && QuestXr::inst().focused();
+  in.cutscene=!video.isActive() && ((game.camera() && game.camera()->isCutscene()) || dialogs.isActive());
   in.leftGrip=(pad.buttons&GamepadState::L1)!=0; in.rightGrip=(pad.buttons&GamepadState::R1)!=0;
   in.menu=(pad.buttons&GamepadState::Start)!=0; in.a=(pad.buttons&GamepadState::A)!=0; in.b=(pad.buttons&GamepadState::B)!=0;
   // The OpenXR adapter reports the physical left Y button as Select/View.
@@ -181,7 +183,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
     const int top=std::max(0,(h()-line*12)/2);
     p.setBrush(Color(.025f,.035f,.055f,.97f));p.drawRect(x,top,width,line*12);
     int y=top+line;
-    for(const char* row:{"Welcome to Gothic II VR 0.2.0", "",
+    for(const char* row:{"Welcome to Gothic II VR 0.2.1", "",
         "This is a very early version of the VR mod.",
         "The game cannot yet be completed in VR.",
         "Many features are unfinished or do not work yet.",
@@ -225,7 +227,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
       switch(row) {
         case Vr::Menu::Locomotion: std::snprintf(value,sizeof(value),"Locomotion  >"); break;
         case Vr::Menu::Hud: std::snprintf(value,sizeof(value),"HUD  >"); break;
-        case Vr::Menu::Performance: std::snprintf(value,sizeof(value),"Performance  >"); break;
+        case Vr::Menu::Performance: std::snprintf(value,sizeof(value),"Graphics  >"); break;
         case Vr::Menu::RenderTests: std::snprintf(value,sizeof(value),"Render tests  >"); break;
         case Vr::Menu::Shadows: std::snprintf(value,sizeof(value),"Shadows: < %s >",s.shadows?"On":"Off"); break;
         case Vr::Menu::Lighting: std::snprintf(value,sizeof(value),"Surface lighting: < %s >",s.lighting?"Normal":"Unlit"); break;
@@ -263,6 +265,15 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
         case Vr::Menu::Turn: std::snprintf(value,sizeof(value),"Turning: < %s >",s.turn==Vr::TurnMode::Snap?"Snap":s.turn==Vr::TurnMode::Smooth?"Smooth":"Physical only"); break;
         case Vr::Menu::SnapAngle: std::snprintf(value,sizeof(value),"Snap angle: < %d degrees >",s.snapAngle); break;
         case Vr::Menu::SmoothSpeed: std::snprintf(value,sizeof(value),"Smooth speed: < %d deg/s >",s.smoothSpeed); break;
+        case Vr::Menu::Taa: std::snprintf(value,sizeof(value),"RDR TAA: < %s >",s.taa?"On":"Off"); break;
+        case Vr::Menu::Vrs: {
+          static const char* names[]={"Off","Low","Medium","High","Ultra"};
+          std::snprintf(value,sizeof(value),"RDR VRS: < %s >",Resources::device().properties().fragmentRate.supported?names[s.vrs]:"Unsupported"); break;
+        }
+        case Vr::Menu::CutsceneMode: {
+          static const char* names[]={"2D theater","3D scene camera","First person"};
+          std::snprintf(value,sizeof(value),"Cutscenes (R3): < %s >",names[s.cutsceneMode]); break;
+        }
         case Vr::Menu::RunMode: std::snprintf(value,sizeof(value),"Run button: < %s >",s.runHold?"Hold":"Toggle"); break;
         case Vr::Menu::RunSpeed: std::snprintf(value,sizeof(value),"Running speed: < %.2fx >",double(s.runSpeed)); break;
         case Vr::Menu::WorldScale: std::snprintf(value,sizeof(value),"World size: < %.2fx >",double(s.worldScale)); break;
@@ -271,7 +282,7 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
         case Vr::Menu::HidePlayer: std::snprintf(value,sizeof(value),"Hide player model: < %s >",s.hidePlayer?"On":"Off"); break;
         case Vr::Menu::RenderScale: std::snprintf(value,sizeof(value),"World render resolution: < %.0f%% >",double(s.renderScale*100)); break;
         case Vr::Menu::HudDistance: std::snprintf(value,sizeof(value),"HUD distance: < %.1f m >",double(s.hudDistance)); break;
-        case Vr::Menu::Profiler: std::snprintf(value,sizeof(value),"Live profiler + CSV: < %s >",!s.profiler?"Off":s.profilerView==1?"Compact":s.profilerView==2?"CSV only":"Panel"); break;
+        case Vr::Menu::Profiler: std::snprintf(value,sizeof(value),"FPS counter: < %s >",s.profiler?"On":"Off"); break;
         case Vr::Menu::Recenter: std::snprintf(value,sizeof(value),"Recenter tracking"); break;
         default: {auto label=vrGameplay.label(row,vrMenu);std::snprintf(value,sizeof(value),"%s",label.empty()?"Close VR menu":label.c_str());break;}
       }
@@ -290,16 +301,15 @@ void MainWindow::paintVrOverlay(PaintEvent& event,bool gameplay) {
       // Compact: one line at the bottom, beside the status bars, so the HUD
       // layer and its clear/copy stay a bottom strip; the
       // details go to the CSV.
-      if(a.frame<=0) std::snprintf(s,sizeof(s),"VR profiler: warming up...");
-      else std::snprintf(s,sizeof(s),"%.1f FPS | %.1f ms p95 %.1f | GPU L %.2f R %.2f",1000/a.frame,a.frame,vrProfiler.p95,
-                         a.gpuValid[0]?a.gpu[0]:-1.0,a.gpuValid[1]?a.gpu[1]:-1.0);
+      if(a.frame<=0) std::snprintf(s,sizeof(s),"FPS: warming up...");
+      else std::snprintf(s,sizeof(s),"%.1f FPS",1000/a.frame);
       const int textW=font.textSize(s).w, left=std::max(0,(w()-textW)/2), base=h()-line*2;
       p.setBrush(Color(0.02f,0.03f,0.05f,0.8f)); p.drawRect(left-10,base-line+7,textW+20,line);
       p.setBrush(Color(1,1,1,1)); font.drawText(p,left,base,s);
       return;
     }
     if(!vrMenu.visible) { const int top=h()/4; y=top+line; p.setBrush(Color(0.02f,0.03f,0.05f,0.8f)); p.drawRect(x,top,width,line*10+8); }
-    if(a.frame<=0) { text(y,"VR profiler: warming up..."); return; }
+    if(a.frame<=0) { text(y,"FPS: warming up..."); return; }
     std::snprintf(s,sizeof(s),"App %.1f FPS / %.0f Hz | Frame %.1f ms | p95 %.1f",1000/a.frame,double(vrProfiler.refresh),a.frame,vrProfiler.p95); text(y,s); y+=line;
     std::snprintf(s,sizeof(s),"Simulation %.2f | UI %.2f | Wait XR %.2f | End XR %.2f",a.simulation,a.ui,a.wait,a.end); text(y,s); y+=line;
     for(int i=0;i<2;++i) {
@@ -547,20 +557,28 @@ void MainWindow::renderVr() {
   vrProfiler.current.tick=Vr::milliseconds()-simulationStart;
   camera=gothic.camera();
   auto pl=gothic.player();
+  const bool scene=camera && (camera->isCutscene() || dialogs.isActive());
+  const bool stereoScene=scene && vrMenu.settings.cutsceneMode!=0;
   const bool world=camera && gothic.worldView() && gothic.isInGame() && gothic.checkLoading()==Gothic::LoadState::Idle &&
-      !camera->isCutscene() && !rootMenu.isActive() && !dialogs.isActive() && !inventory.isActive() &&
+      (!scene || stereoScene) && !rootMenu.isActive() && !inventory.isActive() &&
       !video.isActive() && !chapter.isActive() && !document.isActive() && !console.isActive();
   double simPhase=Vr::milliseconds();
-  if(camera) moveRoomScale(*camera,world && xr.focused() && !vrMenu.visible && !vrWelcome.visible && pl && !pl->isDown() && !pl->isSwim() && !pl->isDive() && pl->interactive()==nullptr);
+  if(camera) moveRoomScale(*camera,world && !scene && xr.focused() && !vrMenu.visible && !vrWelcome.visible && pl && !pl->isDown() && !pl->isSwim() && !pl->isDive() && pl->interactive()==nullptr);
   vrProfiler.current.room=Vr::milliseconds()-simPhase;
   simPhase=Vr::milliseconds(); updateAnimation(dt);
   vrProfiler.current.animation=Vr::milliseconds()-simPhase;
   simPhase=Vr::milliseconds(); tickCamera(dt);
   vrProfiler.current.camera=Vr::milliseconds()-simPhase;
   vrProfiler.current.simulation=Vr::milliseconds()-simulationStart;
-  if(pl) pl->setRenderVisible(!world || !vrMenu.settings.hidePlayer);
+  const bool sceneFirstPerson=stereoScene && vrMenu.settings.cutsceneMode==2 && pl;
+  xr.setSceneTracking(world && stereoScene,vrMenu.settings.cutsceneMode);
+  if(pl) pl->setRenderVisible(!world || (stereoScene ? !sceneFirstPerson : !vrMenu.settings.hidePlayer));
   Matrix4x4 base=Matrix4x4::mkIdentity();
-  if(world && pl) {
+  if(world && stereoScene) {
+    camera->clearVrView();
+    base=sceneFirstPerson ? camera->vrBaseView(pl->position()+Vec3(0,vrEyeHeight,0),pl->rotation()) : camera->view();
+    camera->setVrView(xr.sceneHeadView(base),xr.headProjection());
+  } else if(world && pl) {
     const float crouch=(pl->walkMode()&WalkBit::WM_Sneak)!=WalkBit::WM_Run?50.f:0.f;
     vrCrouchOffset+=(crouch-vrCrouchOffset)*std::min(1.f,float(dt)/100.f);
     base=camera->vrBaseView(pl->position()+Vec3(0,vrEyeHeight-vrCrouchOffset,0),camera->spin().y);
@@ -618,7 +636,7 @@ void MainWindow::renderVr() {
   // and holster interactions are the same kind of world change tick() makes
   // while the previous frame executes; the hand vertices are double-buffered
   // by frame (vrHands, slot cmdId), so the previous right eye keeps its set.
-  if(vrGameplay.update(gothic.checkLoading()==Gothic::LoadState::Idle?gothic.world():nullptr,xr,vrMenu,base,Application::tickCount(),world && !vrMenu.visible && !vrWelcome.visible))
+  if(vrGameplay.update(gothic.checkLoading()==Gothic::LoadState::Idle?gothic.world():nullptr,xr,vrMenu,base,Application::tickCount(),world && !scene && !vrMenu.visible && !vrWelcome.visible))
     vrSaveFailed=!vrMenu.settings.save();
   if(world) vrHands.prepare(device,vrGameplay,Application::tickCount(),cmdId);
   if(w()!=int(xr.width()) || h()!=int(xr.height())) Widget::resize(int(xr.width()),int(xr.height()));
@@ -629,7 +647,9 @@ void MainWindow::renderVr() {
   renderer.setVrBatchedObjects(vrMenu.settings.batchedObjects);
   renderer.setVrObjectDistance(vrMenu.settings.objectDistance);
   renderer.setVrTerrainLod(vrMenu.settings.terrainLod);
-  renderer.setVrFoveation(vrMenu.settings.foveation);
+  renderer.setVrFoveation(0);
+  renderer.setVrVrs(vrMenu.settings.vrs);
+  renderer.setVrTaa(vrMenu.settings.taa && world,scene?vrMenu.settings.cutsceneMode:-1);
   renderer.setVrStaticLighting(vrMenu.settings.staticLighting);
   renderer.setVrHorizonHaze(vrMenu.settings.horizonHaze);
   renderer.setVrShadows(vrMenu.settings.shadows);
@@ -694,7 +714,7 @@ void MainWindow::renderVr() {
       drainRight();
       prepareUi();
     }
-    if(world) camera->setVrView(xr.eyeView(eye,base),xr.projection(eye));
+    if(world) camera->setVrView(stereoScene?xr.sceneEyeView(eye,base):xr.eyeView(eye,base),xr.projection(eye));
     const uint8_t fId=eyeFrame(eye);
     auto& cmd=commands[fId];
     if(lightRouteActive) {
@@ -718,8 +738,7 @@ void MainWindow::renderVr() {
       std::optional<Tempest::Encoder<Tempest::CommandBuffer>> prep;
       if(world && eye==0 && splitLeft) prep.emplace(prepCommands[fId].startEncoding(device,vrProfiler.sampleGpu || lightRouteActive));
       // Timings of a slot include its preparation buffer only when this
-      // frame recorded one there (0.0.42 counted a stale left-eye preparation
-      // into the right eye: +1.9 ms per pair on paper).
+      // frame recorded one there; otherwise the second eye includes stale timings.
       prepRecorded[fId]=prep.has_value();
       auto enc=cmd.startEncoding(device,vrProfiler.sampleGpu || lightRouteActive);
       if(world) {

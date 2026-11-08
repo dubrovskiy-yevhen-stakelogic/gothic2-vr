@@ -1663,7 +1663,7 @@ void MainWindow::clearInput() {
   player.clearInput();
 #if defined(GOTHIC2VR_OPENXR)
   vrRunning=vrRunButton.update(true,false,vrMenu.settings.runHold);
-  if(auto pl=Gothic::inst().player())pl->setVrSwimInput({},0);
+  if(auto pl=Gothic::inst().player()) { pl->setVrSwimInput({},0); pl->setVrGroundInput(false,{}); }
 #endif
   std::memset(mouseP,0,sizeof(mouseP));
   }

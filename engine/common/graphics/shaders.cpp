@@ -223,6 +223,8 @@ void Shaders::compileShaders() {
     }
   }
 
+  vrTaaResolve = postEffect("triangle_uv", "vr_taa", RenderState::ZTestMode::Always);
+  vrTaaApply = postEffect("triangle_uv", "vr_taa_apply", RenderState::ZTestMode::Always);
   tonemapping        = postEffect("triangle_uv", "tonemapping",    RenderState::ZTestMode::Always);
   tonemappingUpscale = postEffect("triangle_uv", "tonemapping_up", RenderState::ZTestMode::Always);
   tonemappingFog     = postEffect("triangle_uv", "tonemapping_fog", RenderState::ZTestMode::Always);

@@ -417,6 +417,13 @@ void DialogMenu::paintEvent(Tempest::PaintEvent &e) {
   const uint64_t da = dlgAnimation ? ANIM_TIME : 0;
   const int      dw = std::min(w(),int(600*scale));
   const int      dh = int(100*scale);
+  // Keep dialogue choices at the bottom; speech belongs inside the comfortable
+  // central HUD region, not the top edge of the headset's full texture.
+#if defined(GOTHIC2VR_OPENXR)
+  const int subtitleY=std::max(20,(h()-dh)/3);
+#else
+  const int subtitleY=20;
+#endif
 
   if(current.time>0 && trade.isOpen()==InventoryMenu::State::Closed && haveToShowSubtitles(curentIsPl)) {
     if(ambient!=nullptr) {
@@ -435,12 +442,12 @@ void DialogMenu::paintEvent(Tempest::PaintEvent &e) {
         }
 
       p.setBrush(*ambient);
-      p.drawRect((w()-dlgW)/2, 20+(dh-dlgH)/2, dlgW, dlgH,
+      p.drawRect((w()-dlgW)/2, subtitleY+(dh-dlgH)/2, dlgW, dlgH,
                  0,0,ambient->w(),ambient->h());
       }
 
     if(current.time>da && current.time<current.msgTime+da)
-      drawTextMultiline(p,(w()-dw)/2,20,dw,dh,current.txt,curentIsPl);
+      drawTextMultiline(p,(w()-dw)/2,subtitleY,dw,dh,current.txt,curentIsPl);
     }
 
   paintChoice(e);

@@ -346,6 +346,7 @@ void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {
   if(props.hasStoreOpNone) {
     rqExt.push_back(VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME);
     }
+  if(props.hasFragmentRate) rqExt.push_back(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
   if(props.hasFragmentDensity) {
     rqExt.push_back(VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME);
     }
@@ -427,6 +428,8 @@ void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {
     VkPhysicalDeviceDescriptorHeapFeaturesEXT dheapFeatures = {};
     dheapFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_FEATURES_EXT;
 
+    VkPhysicalDeviceFragmentShadingRateFeaturesKHR rateFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR};
+    rateFeatures.attachmentFragmentShadingRate=VK_TRUE;
     VkPhysicalDeviceFragmentDensityMapFeaturesEXT fdmFeatures = {};
     fdmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT;
     fdmFeatures.fragmentDensityMap                    = VK_TRUE;
@@ -471,6 +474,9 @@ void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {
     if(props.hasStoreOpNone) {
       // no feature bits
       }
+    if(props.hasFragmentRate) {
+      rateFeatures.pNext=features.pNext; features.pNext=&rateFeatures;
+    }
     if(props.hasFragmentDensity) {
       fdmFeatures.pNext = features.pNext;
       features.pNext = &fdmFeatures;
@@ -625,6 +631,7 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, ui
   if(extensionSupport(ext,VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME)) {
     props.hasStoreOpNone = true;
     }
+  props.hasFragmentRate=hasDeviceFeatures2 && extensionSupport(ext,VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
   if(hasDeviceFeatures2 && extensionSupport(ext,VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME)) {
     props.hasFragmentDensity = true;
     }
@@ -746,6 +753,8 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, ui
     VkPhysicalDeviceDescriptorHeapPropertiesEXT dheapProps = {};
     dheapProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_PROPERTIES_EXT;
 
+    VkPhysicalDeviceFragmentShadingRateFeaturesKHR rateQ{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR};
+    VkPhysicalDeviceFragmentShadingRatePropertiesKHR rateProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_PROPERTIES_KHR};
     VkPhysicalDeviceFragmentDensityMapFeaturesEXT fdmQFeatures = {};
     fdmQFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT;
     VkPhysicalDeviceFragmentDensityMapPropertiesEXT fdmQProps = {};
@@ -803,6 +812,10 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, ui
       dheapProps.pNext = properties.pNext;
       properties.pNext = &dheapProps;
       }
+    if(props.hasFragmentRate) {
+      rateQ.pNext=features.pNext; features.pNext=&rateQ;
+      rateProps.pNext=properties.pNext; properties.pNext=&rateProps;
+    }
     if(props.hasFragmentDensity) {
       fdmQFeatures.pNext = features.pNext;
       features.pNext = &fdmQFeatures;
@@ -817,9 +830,34 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, ui
     vkGetPhysicalDeviceFeatures2  (physicalDevice, &features);
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 
+    if(props.hasFragmentRate) {
+      auto ratesFn=PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR(vkGetInstanceProcAddr(instance,"vkGetPhysicalDeviceFragmentShadingRatesKHR"));
+      uint32_t n=0; bool ratesOk=false;
+      if(ratesFn && ratesFn(physicalDevice,&n,nullptr)==VK_SUCCESS && n>0) {
+        std::vector<VkPhysicalDeviceFragmentShadingRateKHR> rates(n);
+        for(auto& r:rates) r.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR;
+        if(ratesFn(physicalDevice,&n,rates.data())==VK_SUCCESS) {
+          bool found[3]={};
+          for(const auto& r:rates) for(unsigned i=0;i<3;++i)
+            if(r.fragmentSize.width==(1u<<i) && r.fragmentSize.height==(1u<<i) && (r.sampleCounts&VK_SAMPLE_COUNT_1_BIT)) found[i]=true;
+          ratesOk=found[0]&&found[1]&&found[2];
+        }
+      }
+      VkFormatProperties fmt{}; vkGetPhysicalDeviceFormatProperties(physicalDevice,VK_FORMAT_R8_UINT,&fmt);
+      const uint32_t minTex=std::max(rateProps.minFragmentShadingRateAttachmentTexelSize.width,rateProps.minFragmentShadingRateAttachmentTexelSize.height);
+      const uint32_t maxTex=std::min(rateProps.maxFragmentShadingRateAttachmentTexelSize.width,rateProps.maxFragmentShadingRateAttachmentTexelSize.height);
+      uint32_t tex=8; while(tex<minTex && tex<256) tex*=2;
+      props.hasFragmentRate=rateQ.attachmentFragmentShadingRate && dynRendering.dynamicRendering && ratesOk &&
+        (fmt.optimalTilingFeatures&VK_FORMAT_FEATURE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR) && tex<=maxTex &&
+        rateProps.fragmentShadingRateWithShaderDepthStencilWrites && rateProps.fragmentShadingRateWithSampleMask &&
+        rateProps.fragmentShadingRateWithShaderSampleMask;
+      props.fragmentRate.supported=props.hasFragmentRate;
+      props.fragmentRate.texel=props.hasFragmentRate?tex:0;
+    }
     // Fragment density maps are used only with regular attachments (no subsampled images).
-    props.hasFragmentDensity        = props.hasFragmentDensity && fdmQFeatures.fragmentDensityMap==VK_TRUE &&
-                                      fdmQFeatures.fragmentDensityMapNonSubsampledImages==VK_TRUE;
+    // Retired in Gothic: non-subsampled FDM produced visible artifacts. Never
+    // enable it alongside attachmentFragmentShadingRate (mutually exclusive).
+    props.hasFragmentDensity        = false;
     props.fragmentDensity.supported = props.hasFragmentDensity;
     props.fragmentDensity.minTexel  = std::max(fdmQProps.minFragmentDensityTexelSize.width, fdmQProps.minFragmentDensityTexelSize.height);
     props.fragmentDensity.maxTexel  = std::min(fdmQProps.maxFragmentDensityTexelSize.width, fdmQProps.maxFragmentDensityTexelSize.height);

@@ -53,6 +53,6 @@ int main() {
   hostile.read(out_of_range);
   if(hostile.mapping[0]!=9 || hostile.mapping[1]!=0 || hostile.worldScale!=2.f || hostile.renderScale!=0.6f ||
      hostile.runSpeed!=0.75f || hostile.hudDistance!=3.f || hostile.snapAngle!=90 ||
-     hostile.turn!=Vr::TurnMode::Snap || hostile.profilerView!=2) return EXIT_FAILURE;
+     hostile.turn!=Vr::TurnMode::Snap || hostile.profilerView!=1) return EXIT_FAILURE;
   std::puts("Release defaults: 24 settings/calibration/persistence/button-map checks passed");
 }

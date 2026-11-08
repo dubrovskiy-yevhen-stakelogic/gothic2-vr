@@ -114,7 +114,7 @@ int main(){
  test(fast.holding.swing.speed>24 && fast.owner.physics.target.contacts==1,"fast rotating long blade strikes on first pass with a continuous controller");
  Fixture lost;lost.owner.physics.center={0,0,170};lost.tick(-100);lost.tick(0);
  test(!lost.holding.swing.continuous && lost.owner.physics.target.contacts==0,"a one-metre controller discontinuity cannot strike");
- std::printf("VR 053 melee sweeps: %d production checks passed\n",checks);
+ std::printf("VR melee sweeps: %d production checks passed\n",checks);
 }
 '''
 out=Path(sys.argv[1]).resolve();out.mkdir(parents=True,exist_ok=True);(out/'regressions.cpp').write_text(fixture)

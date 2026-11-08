@@ -236,6 +236,15 @@ Texture2d Device::fragmentDensityMap(const Pixmap& pm) {
   return Texture2d(*this,std::move(impl),pm.w(),pm.h(),1,TextureFormat::RG8);
   }
 
+Texture2d Device::fragmentShadingRateMap(const Pixmap& pm) {
+  if(!devProps.fragmentRate.supported || pm.format()!=TextureFormat::R8)
+    return Texture2d();
+  auto impl = api.createFragmentShadingRateMap(dev,pm);
+  if(impl.handler==nullptr)
+    return Texture2d();
+  return Texture2d(*this,std::move(impl),pm.w(),pm.h(),1,TextureFormat::R8);
+  }
+
 StorageImage Device::image2d(TextureFormat frm, const uint32_t w, const uint32_t h, const bool mips) {
   if(!devProps.hasStorageFormat(frm))
     throw std::system_error(Tempest::GraphicsErrc::UnsupportedTextureFormat, formatName(frm));

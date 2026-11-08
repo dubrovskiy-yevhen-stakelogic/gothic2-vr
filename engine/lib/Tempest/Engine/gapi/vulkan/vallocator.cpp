@@ -215,7 +215,7 @@ VBuffer VAllocator::alloc(const void *mem, size_t size, MemUsage usage, BufferHe
   throw std::system_error(Tempest::GraphicsErrc::OutOfVideoMemory);
   }
 
-VTexture VAllocator::alloc(const Pixmap& pm, uint32_t mip, VkFormat format, bool densityMap) {
+VTexture VAllocator::alloc(const Pixmap& pm, uint32_t mip, VkFormat format, bool densityMap, bool shadingRateMap) {
   VTexture ret;
   ret.alloc     = this;
   ret.nonUniqId = nextId();
@@ -234,6 +234,7 @@ VTexture VAllocator::alloc(const Pixmap& pm, uint32_t mip, VkFormat format, bool
   imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
   imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
   imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  if(shadingRateMap) imageInfo.usage |= VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
   if(densityMap)
     imageInfo.usage |= VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT;
 
@@ -258,6 +259,7 @@ VTexture VAllocator::alloc(const Pixmap& pm, uint32_t mip, VkFormat format, bool
   ret.mipCnt       = mip;
   ret.isFilterable = (provider.device->props.hasFilteredFormat(pm.format()));
   ret.isDensityMap = densityMap;
+  ret.isShadingRateMap = shadingRateMap;
   ret.mapW         = uint32_t(pm.w());
   ret.mapH         = uint32_t(pm.h());
   ret.createViews(dev);

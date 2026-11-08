@@ -199,7 +199,7 @@ public final class SetupActivity extends AppCompatActivity {
                 return;
             }
             // Completed installations normally pass their checks before any setup UI is needed.
-            // Longer checks show progress, but import controls only appear when user input is required.
+            // Longer checks show progress, but import controls only appear when a selection is required.
             if (!working || status != null || SystemClock.uptimeMillis() - checksStarted >= 300) {
                 if (status == null) showSetup();
                 updateText(title, getString(working ? R.string.setup_working_title : failed ? R.string.setup_error_title : R.string.setup_title));

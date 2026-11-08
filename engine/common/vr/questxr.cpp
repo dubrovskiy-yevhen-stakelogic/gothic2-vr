@@ -80,7 +80,7 @@ QuestXr::QuestXr() {
     XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO}; info.next=Vr::Platform::instanceCreateNext();
     std::strcpy(info.applicationInfo.applicationName,"Gothic II VR");
     std::strcpy(info.applicationInfo.engineName,"OpenGothic Tempest");
-    info.applicationInfo.applicationVersion=62; info.applicationInfo.engineVersion=1;
+    info.applicationInfo.applicationVersion=67; info.applicationInfo.engineVersion=1;
     info.applicationInfo.apiVersion=XR_MAKE_VERSION(1,0,34);
     info.enabledExtensionCount=uint32_t(extensions.size()); info.enabledExtensionNames=extensions.data();
     check(xrCreateInstance(&info,&instance),"create instance");
@@ -783,6 +783,17 @@ void QuestXr::haptic(uint32_t hand,float strength,float seconds) noexcept {
   xrApplyHapticFeedback(session,&info,reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
 }
 Tempest::Matrix4x4 QuestXr::eyeView(uint32_t eye,const Tempest::Matrix4x4& base) const { return trackedView(pose(views[eye].pose),base); }
+void QuestXr::setSceneTracking(bool enabled,int mode) {
+  const int next=enabled?mode:-1;
+  if(next!=sceneTrackingMode) sceneReference=headPose;
+  sceneTrackingMode=next;
+}
+Tempest::Matrix4x4 QuestXr::sceneHeadView(const Tempest::Matrix4x4& base) const {
+  return XrMath::eyeView(headPose,sceneReference,base,unitsPerMeter);
+}
+Tempest::Matrix4x4 QuestXr::sceneEyeView(uint32_t eye,const Tempest::Matrix4x4& base) const {
+  return XrMath::eyeView(pose(views[eye].pose),sceneReference,base,unitsPerMeter);
+}
 void QuestXr::setPerformanceLevels(int cpu,int gpu) {
   cpu=std::clamp(cpu,0,4); gpu=std::clamp(gpu,0,4);
   if(cpu==perfCpu && gpu==perfGpu) return;
@@ -938,6 +949,14 @@ void QuestXr::queueEyeCopy(uint32_t index,const Tempest::Texture2d& texture,Vr::
   barriers[1].image=eye.images[imageIndex].image; barriers[1].oldLayout=VK_IMAGE_LAYOUT_UNDEFINED; barriers[1].newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
   barriers[1].dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
   vkCmdPipelineBarrier(copyCommand,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,2,barriers);
+  if(index==2) {
+    const VkClearColorValue transparent{};
+    const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+    vkCmdClearColorImage(copyCommand,eye.images[imageIndex].image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&transparent,1,&range);
+    VkMemoryBarrier ordered{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    ordered.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT; ordered.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(copyCommand,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&ordered,0,nullptr,0,nullptr);
+  }
   VkImageCopy copy{}; copy.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1}; copy.dstSubresource=copy.srcSubresource;
   copy.srcOffset={region.x,region.y,0}; copy.dstOffset=copy.srcOffset;
   copy.extent={uint32_t(region.w),uint32_t(region.h),1};

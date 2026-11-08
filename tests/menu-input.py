@@ -17,6 +17,9 @@ code=r'''
 #include <cstdio>
 #include <cstdlib>
 using Tempest::GamepadState;
+GamepadBindings controllerBindings;
+struct Scene { bool active=false; bool isActive(){return active;} bool isCutscene(){return active;} } video,dialogs;
+struct Game { Scene scene; Scene* camera(){return &scene;} } game;
 struct QuestXr {
   static QuestXr& inst(){static QuestXr x;return x;}
   bool focused(){return true;}
@@ -42,12 +45,15 @@ int main(){
   using GB=GamepadBindings;using Action=GB::Action;
   GB bindings;bindings.setVrMapping({Action::Jump,Action::Interact,Action::Inventory,Action::Journal,Action::Run,Action::Sneak});
   Vr::Menu menu;GamepadState pad;pad.connected=true;uint64_t now=0;
-  int journal=0,gameMenu=0;
+  int journal=0,gameMenu=0,wheel=0,pause=0;
   auto tick=[&]{
     now+=20;const bool consumed=menu.update(adapt(pad),now);
     if(consumed){if(menu.action==Vr::Menu::OpenGameMenu)++gameMenu;bindings.reset(pad.buttons);}
-    else for(auto event:bindings.update(pad.buttons,GB::Context::Gameplay,now))
+    else for(auto event:bindings.update(pad.buttons,GB::Context::Gameplay,now)) {
       if(event.action==Action::Journal && event.phase==GB::Phase::Press)++journal;
+      if(event.action==Action::SystemWheel && event.phase==GB::Phase::Press)++wheel;
+      if(event.action==Action::Pause && event.phase==GB::Phase::Press)++pause;
+    }
     return consumed;
   };
   tick();tick();pad.buttons=GamepadState::L1|GamepadState::R1;tick();
@@ -62,6 +68,15 @@ int main(){
   check(!tick() && journal==1 && gameMenu==2,"physical Y alone still opens Journal");
   pad.buttons=0;tick();pad.buttons=GamepadState::L1|physicalY();tick();
   check(journal==2 && gameMenu==2,"one grip plus physical Y retains normal mapping");
+  pad.buttons=0;tick();tick();pad.buttons=GamepadState::Start;tick();
+  for(int i=0;i<8;++i)tick();
+  pad.buttons=0;tick();check(pause==1 && wheel==0 && !menu.visible,"short Menu keeps native pause");
+  pad.buttons=GamepadState::Start;
+  for(int i=0;i<120;++i)tick();
+  check(menu.visible && wheel==0 && pause==1,"long Menu opens VR menu once with no mobile wheel");
+  pad.buttons=0;tick();tick();check(pause==1 && wheel==0,"hold release cannot leak pause or wheel");
+  pad.buttons=GamepadState::Start;for(int i=0;i<120;++i)tick();
+  check(!menu.visible && wheel==0,"fresh Menu hold closes VR menu once");
   std::printf("OpenXR menu input: %d production-adapter checks passed\n",checks);
 }
 '''

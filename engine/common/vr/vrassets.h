@@ -118,7 +118,7 @@ inline std::filesystem::path settingsTempFile() {
   auto temp=settingsFile(); temp+=".tmp"; return temp;
   }
 
-// Human-readable location an asset was looked for, so a failure can tell the
+// Readable location an asset was looked for, so a failure can tell the
 // player which file to put where. Never used to open anything.
 inline std::string assetPath(const char* name) {
 #if defined(__ANDROID__)

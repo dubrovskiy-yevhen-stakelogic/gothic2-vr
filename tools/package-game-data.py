@@ -24,7 +24,7 @@ def main():
     files = package.game_files(source)
     saves = []
     target = (ROOT / "build/private/game-data.zip").resolve()
-    if not target.is_relative_to(ROOT / "build/private") or target.is_relative_to(source):
+    if not package.path_within(target, ROOT / "build/private") or package.path_within(target, source):
         raise RuntimeError("Private archive must stay within the project build/private folder")
     report = {
         "schema_version": 1, "edition": edition, "source": str(source), "output": str(target),

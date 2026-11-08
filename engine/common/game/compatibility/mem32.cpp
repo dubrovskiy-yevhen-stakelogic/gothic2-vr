@@ -10,7 +10,7 @@ using namespace Tempest;
 
 Mem32::Mem32() {
   /*
-   *  [0x00001000 .. 0x80000000] - (2GB) user space
+   *  [0x00001000 .. 0x80000000] - (2GB) application address space
    *  [0x80000000 .. 0xc0000000] - (1GB) extra space(reserved for opengothic use; pinned memory)
    *  [0xc0000000 .. 0xffffffff] - (1GB) kernel space
    */

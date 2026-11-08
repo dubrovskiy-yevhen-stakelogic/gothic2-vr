@@ -76,6 +76,7 @@ class Shaders {
     Tempest::RenderPipeline  underwaterT, underwaterS;
     Tempest::RenderPipeline  waterReflection, waterReflectionSSR;
 
+    Tempest::RenderPipeline  vrTaaResolve, vrTaaApply;
     Tempest::RenderPipeline  tonemapping, tonemappingUpscale;
     Tempest::RenderPipeline  tonemappingFog; // VR: reflections + fog composite folded into the tonemapping pass
     Tempest::RenderPipeline  hdrOutput;

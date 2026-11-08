@@ -328,6 +328,16 @@ void VCommandBuffer::beginRendering(const FrameBufferDesc& fbo, size_t fboSize, 
         }
       }
 
+    VkRenderingFragmentShadingRateAttachmentInfoKHR rateInfo{VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR};
+    if(fdmMap && fdmMap->isShadingRateMap && device.props.fragmentRate.supported) {
+      const auto tex=device.props.fragmentRate.texel;
+      if(fdmMap->mapW>=(width+tex-1)/tex && fdmMap->mapH>=(height+tex-1)/tex) {
+        rateInfo.imageView=fdmMap->imgView;
+        rateInfo.imageLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+        rateInfo.shadingRateAttachmentTexelSize={tex,tex};
+        rateInfo.pNext=info.pNext; info.pNext=&rateInfo; passDyn.fdm=2;
+      }
+    }
     VkImageView imageView   = VK_NULL_HANDLE;
     VkFormat    imageFormat = VK_FORMAT_UNDEFINED;
     for(size_t i=0; i<fboSize; ++i) {
@@ -1235,6 +1245,10 @@ void VCommandBuffer::barrier(const AbstractGraphicsApi::SyncDesc& s, const Abstr
     bx.oldLayout             = toLayout(b.prev, tx);
     bx.newLayout             = toLayout(b.next, tx);
     finalizeImageBarrier(bx,b);
+    if(bx.newLayout==VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR) {
+      bx.dstAccessMask |= VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR;
+      dstStageMask |= VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+    }
     if(bx.newLayout==VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT) {
       bx.dstAccessMask |= VK_ACCESS_FRAGMENT_DENSITY_MAP_READ_BIT_EXT;
       dstStageMask     |= VK_PIPELINE_STAGE_FRAGMENT_DENSITY_PROCESS_BIT_EXT;

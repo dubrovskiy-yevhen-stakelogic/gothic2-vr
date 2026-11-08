@@ -47,6 +47,7 @@ class VTexture : public AbstractGraphicsApi::Texture {
     bool                   isFilterable   = false;
     bool                   borrowedColor = false;
     bool                   isDensityMap  = false; // VK_EXT_fragment_density_map attachment (layout FRAGMENT_DENSITY_MAP_OPTIMAL)
+    bool                   isShadingRateMap=false;
     uint32_t               mapW = 0, mapH = 0;
 
   protected:

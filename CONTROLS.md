@@ -59,6 +59,12 @@ Holsters select a suitable inventory item. A picked-up melee weapon is assigned 
 
 Weapons whose strength or dexterity requirement is not met deal a quarter of their damage and show a warning. **Ignore weapon requirements** removes this penalty.
 
-**HUD** controls interface placement, distance, **World item highlight**, highlight range and **Bow sight**. **Open game interface** opens the original inventory in a theater panel. **Performance** controls render resolution, draw distance, detail, lighting and the profiler. **Foveation** defaults to Off. On numeric calibration rows, the right trigger increases the value and the left trigger decreases it. Settings save automatically in `VR.ini`.
+**HUD** controls interface placement, distance, **World item highlight**, highlight range and **Bow sight**. **Open game interface** opens the original inventory in a theater panel. **Graphics** controls resolution, TAA, VRS, draw distance, detail, lighting and the FPS counter. **VRS** defaults to Low. On numeric calibration rows, the right trigger increases the value and the left trigger decreases it. Settings save automatically in `VR.ini`.
 
 The bow calibration has separate string height, vertical center, horizontal X/Z offsets and arrow scale. Support-hand position controls move the palm independently of the string. Use **Use as bow default** or **Use as crossbow default** to apply alignment across that weapon family.
+
+## Cutscenes and graphics (0.2.1)
+
+Hold Menu to open VR settings; L3 + R3 remains available. R3 cycles 2D theater, cinematic 3D and first-person cutscenes. New settings default to cinematic 3D; prerecorded videos remain 2D.
+
+Graphics contains resolution, TAA, VRS, object distance, terrain detail, horizon, fog, haze, lighting and an FPS counter. VRS defaults to Low; TAA is optional. The stick selects rows; triggers or A change values.

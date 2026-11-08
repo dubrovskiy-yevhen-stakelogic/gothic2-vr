@@ -437,6 +437,31 @@ AbstractGraphicsApi::PTexture VulkanApi::createFragmentDensityMap(AbstractGraphi
   return PTexture(ptex.handler);
   }
 
+AbstractGraphicsApi::PTexture VulkanApi::createFragmentShadingRateMap(AbstractGraphicsApi::Device* d, const Pixmap& p) {
+  VDevice& dx = *reinterpret_cast<VDevice*>(d);
+  if(!dx.props.fragmentRate.supported || p.format()!=TextureFormat::R8)
+    return PTexture();
+
+  const uint32_t size  = uint32_t(p.dataSize());
+  VBuffer        stage = dx.allocator.alloc(p.data(),size,MemUsage::Transfer,BufferHeap::Upload);
+  VTexture       tex   = dx.allocator.alloc(p,1,VK_FORMAT_R8_UINT,false,true);
+
+  DSharedPtr<Buffer*>  pstage(new VBuffer (std::move(stage)));
+  DSharedPtr<Texture*> ptex  (new VTexture(std::move(tex)));
+
+  auto cmd = dx.dataMgr().get();
+  cmd->begin(SyncHint::NoPendingReads);
+  cmd->hold(pstage);
+  cmd->hold(ptex);
+  cmd->bless(*ptex.handler, ResourceLayout::TransferDst);
+  cmd->copy(*ptex.handler,p.w(),p.h(),0,*pstage.handler,0);
+  cmd->end();
+  dx.dataMgr().submit(std::move(cmd));
+
+  reinterpret_cast<VTexture*>(ptex.handler)->nonUniqId = NonUniqResId::I_None;
+  return PTexture(ptex.handler);
+  }
+
 AbstractGraphicsApi::PTexture VulkanApi::createTexture(AbstractGraphicsApi::Device *d,
                                                        const uint32_t w, const uint32_t h, uint32_t mipCnt,
                                                        TextureFormat frm) {

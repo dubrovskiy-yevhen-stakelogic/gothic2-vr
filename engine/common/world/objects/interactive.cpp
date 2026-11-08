@@ -120,15 +120,15 @@ void Interactive::load(Serialize &fin) {
   fin.read(sz);
   for(size_t i=0; i<sz; ++i) {
     std::string name;
-    Npc*        user       = nullptr;
+    Npc*        occupant       = nullptr;
     bool        attachMode = false;
     Phase       started    = NotStarted;
 
-    fin.read(name,user,attachMode,reinterpret_cast<uint8_t&>(started));
+    fin.read(name,occupant,attachMode,reinterpret_cast<uint8_t&>(started));
 
     for(auto& a:attPos)
       if(a.name==name) {
-        a.user       = user;
+        a.occupant       = occupant;
         a.attachMode = attachMode;
         a.started    = started;
         }
@@ -157,7 +157,7 @@ void Interactive::save(Serialize &fout) const {
 
   fout.write(uint32_t(attPos.size()));
   for(auto& i:attPos) {
-    fout.write(i.name,i.user,i.attachMode,uint8_t(i.started));
+    fout.write(i.name,i.occupant,i.attachMode,uint8_t(i.started));
     }
 
   if(!invent.isEmpty()) {
@@ -171,8 +171,8 @@ void Interactive::save(Serialize &fout) const {
 
 void Interactive::postValidate() {
   for(auto& i:attPos)
-    if(i.user!=nullptr && i.user->interactive()!=this)
-      i.user = nullptr;
+    if(i.occupant!=nullptr && i.occupant->interactive()!=this)
+      i.occupant = nullptr;
   if(visual.updateAnimation(nullptr,this,world,0,true))
     animChanged = true;
   }
@@ -217,7 +217,7 @@ void Interactive::drawVobRay(DbgPainter& p, const Npc& npc) const {
 
 void Interactive::resetPositionToTA(int32_t state) {
   for(auto& i:attPos)
-    if(i.user!=nullptr && i.user->isPlayer())
+    if(i.occupant!=nullptr && i.occupant->isPlayer())
       return;
 
   loopState = false;
@@ -262,13 +262,13 @@ void Interactive::tick(uint64_t dt) {
 
   Pos* p = nullptr;
   for(auto& i:attPos) {
-    if(i.user!=nullptr) {
+    if(i.occupant!=nullptr) {
       p = &i;
       }
     }
 
   if(p==nullptr) {
-    // Note: oCMobInter::rewind, oCMobInter with killed user has to go back to state=-1
+    // Note: oCMobInter::rewind, oCMobInter with killed occupant has to go back to state=-1
     // All other cases, oCMobFire, oCMobDoor in particular - preserve old state
     const int destSt = -1;
     for(auto& i:attPos) {
@@ -282,12 +282,12 @@ void Interactive::tick(uint64_t dt) {
     return;
     }
 
-  if(p->user==nullptr && (state==-1 && !p->attachMode))
+  if(p->occupant==nullptr && (state==-1 && !p->attachMode))
     return;
-  if(p->user==nullptr && (state==stateNum && p->attachMode))
+  if(p->occupant==nullptr && (state==stateNum && p->attachMode))
     return;
 
-  if(isLadder() && p->started==Started && p->user!=nullptr && p->user->isAiQueueEmpty())
+  if(isLadder() && p->started==Started && p->occupant!=nullptr && p->occupant->isAiQueueEmpty())
     return;
   implTick(*p);
   }
@@ -298,20 +298,20 @@ void Interactive::onKeyInput(KeyCodec::Action act) {
 
   Pos* p = nullptr;
   for(auto& i:attPos) {
-    if(i.user!=nullptr) {
+    if(i.occupant!=nullptr) {
       p = &i;
       }
     }
   if(p==nullptr)
     return;
 
-  auto& npc = *p->user;
+  auto& npc = *p->occupant;
   assert(npc.isPlayer());
 
   if(act==KeyCodec::ActionGeneric) {
     npc.setInteraction(nullptr);
     npc.stopAnim("");
-    p->user = nullptr;
+    p->occupant = nullptr;
     return;
     }
 
@@ -323,15 +323,15 @@ void Interactive::onKeyInput(KeyCodec::Action act) {
   }
 
 void Interactive::implTick(Pos& p) {
-  if(p.user==nullptr)
+  if(p.occupant==nullptr)
     return;
 
   static bool dbg = false;
   static int  kId = -1;
-  if(dbg && !p.user->isPlayer() && p.user->handle().id!=kId)
+  if(dbg && !p.occupant->isPlayer() && p.occupant->handle().id!=kId)
     return;
 
-  Npc&       npc    = *p.user;
+  Npc&       npc    = *p.occupant;
   const bool attach = (p.attachMode^reverseState);
 
   if(p.started==NotStarted) {
@@ -361,7 +361,7 @@ void Interactive::implTick(Pos& p) {
   if(p.started==Quit) {
     npc.quitInteraction();
     loopState = false;
-    p.user    = nullptr;
+    p.occupant    = nullptr;
     p.started = NotStarted;
     return;
     }
@@ -420,10 +420,10 @@ void Interactive::implTick(Pos& p) {
   }
 
 void Interactive::implQuitInteract(Interactive::Pos &p) {
-  if(p.user==nullptr)
+  if(p.occupant==nullptr)
     return;
   // S[i] -> STAND
-  if(!setAnim(p.user, Anim::ToStand))
+  if(!setAnim(p.occupant, Anim::ToStand))
     return;
   // quit will be triggered with delay depend on animation
   p.started = Quit;
@@ -528,7 +528,7 @@ std::string_view Interactive::schemeName() const {
 
 std::string_view Interactive::posSchemeName() const {
   for(auto& i:attPos)
-    if(i.user!=nullptr) {
+    if(i.occupant!=nullptr) {
       return i.posTag();
       }
   return "";
@@ -617,7 +617,7 @@ P* Interactive::findNearest(Inter& in, const Npc& to) {
   float dist = 0;
   P*    p    = nullptr;
   for(auto& i:in.attPos) {
-    if(i.user || !i.isAttachPoint())
+    if(i.occupant || !i.isAttachPoint())
       continue;
     float d = in.qDistTo(to,i);
     if(d<dist || p==nullptr) {
@@ -655,9 +655,9 @@ void Interactive::implAddItem(std::string_view name) {
 
 void Interactive::autoDetachNpc() {
   for(auto& i:attPos)
-    if(i.user!=nullptr) {
-      if(!i.user->world().isInDialog())
-        i.user->setInteraction(nullptr);
+    if(i.occupant!=nullptr) {
+      if(!i.occupant->world().isInDialog())
+        i.occupant->setInteraction(nullptr);
       }
   }
 
@@ -715,7 +715,7 @@ bool Interactive::checkUseConditions(Npc& npc) {
 
 const Interactive::Pos *Interactive::findFreePos() const {
   for(auto& i:attPos)
-    if(i.user==nullptr && i.isAttachPoint()) {
+    if(i.occupant==nullptr && i.isAttachPoint()) {
       return &i;
       }
   return nullptr;
@@ -723,7 +723,7 @@ const Interactive::Pos *Interactive::findFreePos() const {
 
 Interactive::Pos *Interactive::findFreePos() {
   for(auto& i:attPos)
-    if(i.user==nullptr && i.isAttachPoint()) {
+    if(i.occupant==nullptr && i.isAttachPoint()) {
       return &i;
       }
   return nullptr;
@@ -731,14 +731,14 @@ Interactive::Pos *Interactive::findFreePos() {
 
 bool Interactive::isAvailable() const {
   for(auto& i:attPos)
-    if(i.user!=nullptr)
+    if(i.occupant!=nullptr)
       return false;
   return findFreePos()!=nullptr;
   }
 
 bool Interactive::isStaticState() const {
   for(auto& i:attPos)
-    if(i.user!=nullptr) {
+    if(i.occupant!=nullptr) {
       if(i.attachMode && i.started==Started)
         return loopState;
       return false;
@@ -748,7 +748,7 @@ bool Interactive::isStaticState() const {
 
 bool Interactive::isDetachState(const Npc& npc) const {
   for(auto& i:attPos)
-    if(i.user==&npc)
+    if(i.occupant==&npc)
       return !(i.attachMode ^ reverseState);
   return !reverseState;
   }
@@ -772,7 +772,7 @@ bool Interactive::canQuitAtState(const Npc& npc, int32_t state) const {
   }
 
 bool Interactive::attach(Npc& npc, Interactive::Pos& to) {
-  assert(to.user==nullptr);
+  assert(to.occupant==nullptr);
 
   auto mat = nodeTranform(&npc,to);
 
@@ -815,7 +815,7 @@ bool Interactive::attach(Npc& npc, Interactive::Pos& to) {
     state        = -1;
     }
 
-  to.user       = &npc;
+  to.occupant       = &npc;
   to.started    = NotStarted;
   to.attachMode = true;
   return true;
@@ -823,7 +823,7 @@ bool Interactive::attach(Npc& npc, Interactive::Pos& to) {
 
 bool Interactive::attach(Npc &npc) {
   for(auto& i:attPos)
-    if(i.user==&npc)
+    if(i.occupant==&npc)
       return true;
 
   if(!isAvailable()) {
@@ -843,14 +843,14 @@ bool Interactive::attach(Npc &npc) {
 
 bool Interactive::detach(Npc &npc, bool quick) {
   for(auto& i:attPos) {
-    if(i.user==&npc && i.attachMode) {
-      if(quick || canQuitAtState(*i.user,state)) {
+    if(i.occupant==&npc && i.attachMode) {
+      if(quick || canQuitAtState(*i.occupant,state)) {
         if(!quick) {
           auto sq = npc.setAnimAngGet(Npc::Anim::InteractToStand);
           if(sq==nullptr)
             return false;
           }
-        i.user       = nullptr;
+        i.occupant       = nullptr;
         i.started    = (canQuitAtState(npc,state) || !quick) ? NotStarted : Quit;
         i.attachMode = false;
         loopState    = false;
@@ -871,7 +871,7 @@ bool Interactive::detach(Npc &npc, bool quick) {
 
 bool Interactive::isAttached(const Npc& to) {
   for(auto& i:attPos)
-    if(i.user==&to)
+    if(i.occupant==&to)
       return true;
   return false;
   }
@@ -1042,7 +1042,7 @@ const Animation::Sequence* Interactive::animNpc(const AnimationSolver &solver, A
     }
 
   for(auto& i:attPos)
-    if(i.user!=nullptr) {
+    if(i.occupant!=nullptr) {
       point = string_frm("_",i.posTag());
       }
 

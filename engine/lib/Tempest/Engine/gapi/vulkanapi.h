@@ -43,6 +43,7 @@ class VulkanApi : public AbstractGraphicsApi {
     PTexture       createTexture(Device* d, const uint32_t w, const uint32_t h, uint32_t mips, TextureFormat frm) override;
     PTexture       createStorage(Device* d, const uint32_t w, const uint32_t h, uint32_t mips, TextureFormat frm) override;
     PTexture       createStorage(Device* d, const uint32_t w, const uint32_t h, const uint32_t depth, uint32_t mips, TextureFormat frm) override;
+    PTexture       createFragmentShadingRateMap(Device* d, const Pixmap& p) override;
     PTexture       createFragmentDensityMap(Device* d, const Pixmap& p) override;
 
     AccelerationStructure* createBottomAccelerationStruct(Device* d, const RtGeometry* geom, size_t size) override;

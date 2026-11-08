@@ -50,7 +50,7 @@ class VPipeline : public AbstractGraphicsApi::Pipeline {
     uint32_t           defaultStride  = 0;
     const bool         allowAsync     = AbstractGraphicsApi::asyncPipelineCreation();
 
-    VkPipeline         instance(const VkPipelineRenderingCreateInfoKHR& info, VkRenderPass pass, VkPipelineLayout pLay, size_t stride, bool fdm = false);
+    VkPipeline         instance(const VkPipelineRenderingCreateInfoKHR& info, VkRenderPass pass, VkPipelineLayout pLay, size_t stride, int fdm = false);
 
     IVec3              workGroupSize() const override;
     size_t             sizeofBuffer(size_t id, size_t arraylen) const override;
@@ -64,14 +64,14 @@ class VPipeline : public AbstractGraphicsApi::Pipeline {
       };
 
     struct InstDr : Inst {
-      InstDr(const VkPipelineRenderingCreateInfoKHR& lay, VkPipelineLayout pLay, size_t stride, VkPipeline val, bool fdm):Inst(val,pLay,stride),lay(lay),fdm(fdm){
+      InstDr(const VkPipelineRenderingCreateInfoKHR& lay, VkPipelineLayout pLay, size_t stride, VkPipeline val, int fdm):Inst(val,pLay,stride),lay(lay),fdm(fdm){
         std::memcpy(colorFrm, lay.pColorAttachmentFormats, lay.colorAttachmentCount*sizeof(VkFormat));
         }
       VkPipelineRenderingCreateInfoKHR lay;
       VkFormat                         colorFrm[MaxFramebufferAttachments] = {};
-      bool                             fdm = false;
+      int                              fdm = false;
 
-      bool                             isCompatible(const VkPipelineRenderingCreateInfoKHR& dr, VkPipelineLayout pLay, size_t stride, bool fdm) const;
+      bool                             isCompatible(const VkPipelineRenderingCreateInfoKHR& dr, VkPipelineLayout pLay, size_t stride, int fdm) const;
       };
 
     VDevice&                               device;
@@ -91,7 +91,7 @@ class VPipeline : public AbstractGraphicsApi::Pipeline {
       VkFormat                         colorFrm[MaxFramebufferAttachments] = {};
       VkPipelineLayout                 pLay   = VK_NULL_HANDLE;
       size_t                           stride = 0;
-      bool                             fdm    = false;
+      int                              fdm    = false;
       };
     struct AsyncState {
       std::mutex                           sync;
@@ -109,7 +109,7 @@ class VPipeline : public AbstractGraphicsApi::Pipeline {
                                                       const VkRenderPass rpass, const VkPipelineRenderingCreateInfoKHR* dynLay, const RenderState &st,
                                                       const Decl::ComponentType *decl, size_t declSize, size_t stride,
                                                       Topology tp,
-                                                      const DSharedPtr<const VShader*>* shaders, bool fdm);
+                                                      const DSharedPtr<const VShader*>* shaders, int fdm);
 
     static void initPushMappings(VDevice& device,
                                  VkShaderDescriptorSetAndBindingMappingInfoEXT& info, VkDescriptorSetAndBindingMappingEXT* mappings,

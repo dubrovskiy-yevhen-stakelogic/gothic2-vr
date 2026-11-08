@@ -18,6 +18,7 @@ VTexture::VTexture(VTexture&& other) {
   std::swap(page,           other.page);
   std::swap(isStorageImage, other.isStorageImage);
   std::swap(isDensityMap,   other.isDensityMap);
+  std::swap(isShadingRateMap,other.isShadingRateMap);
   std::swap(mapW,           other.mapW);
   std::swap(mapH,           other.mapH);
   std::swap(is3D,           other.is3D);
@@ -183,6 +184,7 @@ VkImageLayout VTexture::defaultLayout() const {
     return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   if(nativeIsDepthFormat(format))
     return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  if(isShadingRateMap) return VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
   if(isDensityMap)
     return VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
   if(isStorageImage)

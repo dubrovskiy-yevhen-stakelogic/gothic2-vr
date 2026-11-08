@@ -21,7 +21,7 @@ bool VPipeline::InstRp::isCompatible(const std::shared_ptr<VFramebufferMap::Rend
   return lay->isCompatible(*dr);
   }
 
-bool VPipeline::InstDr::isCompatible(const VkPipelineRenderingCreateInfoKHR& dr, VkPipelineLayout pLay, size_t stride, bool fdm) const {
+bool VPipeline::InstDr::isCompatible(const VkPipelineRenderingCreateInfoKHR& dr, VkPipelineLayout pLay, size_t stride, int fdm) const {
   if(this->stride!=stride)
     return false;
   if(this->fdm!=fdm)
@@ -87,7 +87,7 @@ VPipeline::~VPipeline() {
   cleanup();
   }
 
-VkPipeline VPipeline::instance(const VkPipelineRenderingCreateInfoKHR& info, VkRenderPass pass, VkPipelineLayout pLay, size_t stride, bool fdm) {
+VkPipeline VPipeline::instance(const VkPipelineRenderingCreateInfoKHR& info, VkRenderPass pass, VkPipelineLayout pLay, size_t stride, int fdm) {
   const bool async = allowAsync && pass==VK_NULL_HANDLE && info.pNext==nullptr &&
                      info.colorAttachmentCount<=MaxFramebufferAttachments && device.asyncPipelines();
   {
@@ -214,7 +214,7 @@ VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
                                            const RenderState &st,
                                            const Decl::ComponentType *decl, size_t declSize,
                                            size_t stride, Topology tp,
-                                           const DSharedPtr<const VShader*>* shaders, bool fdm) {
+                                           const DSharedPtr<const VShader*>* shaders, int fdm) {
   SmallArray<VkDescriptorSetAndBindingMappingEXT, MaxBindings> mappings(this->layout.size());
   VkShaderDescriptorSetAndBindingMappingInfoEXT mappingInfo { VK_STRUCTURE_TYPE_SHADER_DESCRIPTOR_SET_AND_BINDING_MAPPING_INFO_EXT};
   if(device.props.hasDescriptorHeap) {
@@ -402,12 +402,21 @@ VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
     } else {
     pipelineInfo.pNext      = dynLay;
     }
-  if(fdm) {
+  if(fdm==1) {
     // Dynamic rendering with a fragment density map attachment
     pipelineInfo.flags |= VK_PIPELINE_CREATE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT;
     createFlags2.flags |= VK_PIPELINE_CREATE_2_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT;
     }
 
+  VkPipelineFragmentShadingRateStateCreateInfoKHR rate{VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR};
+  if(fdm==2) {
+    rate.fragmentSize={1,1};
+    rate.combinerOps[0]=VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+    rate.combinerOps[1]=VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR;
+    rate.pNext=pipelineInfo.pNext; pipelineInfo.pNext=&rate;
+    pipelineInfo.flags |= VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+    createFlags2.flags |= VK_PIPELINE_CREATE_2_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+  }
   if(device.props.hasDescriptorHeap) {
     createFlags2.pNext = pipelineInfo.pNext;
     pipelineInfo.pNext = &createFlags2;

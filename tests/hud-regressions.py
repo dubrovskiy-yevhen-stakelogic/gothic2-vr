@@ -46,7 +46,7 @@ int main(){
  Overlay ui;ui.vrGameplay=g;Gothic::inst().current=&world;ui.paint(true);
  test(ui.draws==1 && ui.value==.75f,"production overlay paints native current and maximum enemy HP");
  test(ui.barX==ui.w()/2 && ui.barY==ui.h()/12,"target health remains above center without the player's HUD shift");
- for(float offset:{-.3f,0.f,.3f}){ui.vrMenu.hudX=ui.vrMenu.hudY=offset;ui.paint(true);test(ui.barY>=0 && ui.barY<ui.h()/4 && ui.barX==ui.w()/2,"user HUD offsets cannot clip the top enemy bar");}
+ for(float offset:{-.3f,0.f,.3f}){ui.vrMenu.hudX=ui.vrMenu.hudY=offset;ui.paint(true);test(ui.barY>=0 && ui.barY<ui.h()/4 && ui.barX==ui.w()/2,"configured HUD offsets cannot clip the top enemy bar");}
  const int before=ui.draws;ui.vrMenu.visible=true;ui.paint(true);test(ui.draws==before,"VR menu hides target health");ui.vrMenu.visible=false;
  ui.paint(false);test(ui.draws==before,"theater and inventory views do not receive a gameplay target overlay");
  first.maximum=0;ui.paint(true);test(ui.value==0 && std::isfinite(ui.value),"invalid maximum HP cannot produce NaN geometry");
@@ -66,7 +66,7 @@ int main(){
  const Vec3 eye{0,140,0},forward{0,0,1};
  test(gazeScore(eye,forward,{300,140,1000})<0 && healthGazeScore(eye,forward,{300,140,1000},100,false)>=0,"wide HUD cone does not widen item and interaction gaze selection");
  test(healthGazeScore(eye,forward,{450,140,1000},100,false)<0 && healthGazeScore(eye,forward,{450,140,1000},100,true)>=0,"acquisition and retention use separate angular thresholds");
- std::printf("VR 054 target health: %d production checks passed\n",checks);
+ std::printf("VR target health: %d production checks passed\n",checks);
 }
 '''
 out=Path(sys.argv[1]).resolve();out.mkdir(parents=True,exist_ok=True);(out/'regressions.cpp').write_text(fixture)

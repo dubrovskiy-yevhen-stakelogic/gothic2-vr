@@ -275,7 +275,7 @@ int main() {
   test(customLeft.interaction.calibration.at("ITMW_FRANCISDAGGER_MIS_L").offset.x==.03f,"migration retains independently edited left grip");
   Settings explicitPair;std::istringstream pairVersioned("CalibrationMirrorVersion=1\nItemCal_ITMW_FRANCISDAGGER_MIS_R=-0.02 0.075 0.06 -77 0 0 -1\nItemCal_ITMW_FRANCISDAGGER_MIS_L=-0.02 0.075 0.06 -77 0 0 -1\n");explicitPair.read(pairVersioned);
   test(explicitPair.interaction.calibration.at("ITMW_FRANCISDAGGER_MIS_L").offset.x==-.02f,"versioned intentional equal profiles are preserved");
-  Settings defaults;test(defaults.interaction.meleeDefault.rotation.x==-77.f && defaults.interaction.meleeDefault.offset.y==.075f,"user-tested sword placement is the melee baseline");
+  Settings defaults;test(defaults.interaction.meleeDefault.rotation.x==-77.f && defaults.interaction.meleeDefault.offset.y==.075f,"validated sword placement is the melee baseline");
   defaults.interaction.gripLock=true;defaults.interaction.meleeDefault=asymmetric;std::ostringstream defaultText;defaults.write(defaultText);Settings restoredDefault;std::istringstream defaultInput(defaultText.str());restoredDefault.read(defaultInput);
   test(restoredDefault.interaction.gripLock && restoredDefault.interaction.meleeDefault.offset.x==.12f,"grip lock and editable melee baseline survive restart");
   Menu lockMenu;lockMenu.visible=true;lockMenu.page=Menu::Page::Holsters;lockMenu.selected=0;

@@ -366,6 +366,7 @@ class VDevice : public AbstractGraphicsApi::Device {
       bool     hasMaintenance5    = false;
       bool     hasDescriptorHeap  = false;
       bool     hasFragmentDensity = false;
+      bool     hasFragmentRate = false;
       };
 
     struct Queue final {

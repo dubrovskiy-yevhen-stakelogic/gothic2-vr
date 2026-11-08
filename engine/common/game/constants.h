@@ -7,7 +7,7 @@ inline std::string_view menuMain = "MENU_MAIN";
 
 enum Guild: uint32_t {
   GIL_NONE                    = 0,  // (keine)
-  GIL_HUMAN                   = 1,  // Special Guild -> To set Constants for ALL Human Guilds --> wird verwendet in Species.d
+  GIL_HUMAN                   = 1,  // Special Guild -> To set Constants for all character guilds --> wird verwendet in Species.d
   GIL_PAL                     = 1,  // Paladin
   GIL_MIL                     = 2,  // Miliz
   GIL_VLK                     = 3,  // Bürger

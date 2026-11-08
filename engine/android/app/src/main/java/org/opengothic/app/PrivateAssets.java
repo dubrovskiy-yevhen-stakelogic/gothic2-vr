@@ -113,7 +113,7 @@ public final class PrivateAssets {
                 File target = destination(root, item.path);
                 progress.update(done, total, item.path);
                 if (target.exists()) {
-                    // Settings and saves are seeds, never replacements for user data.
+                    // Settings and saves are seeds, never replacements for existing data.
                     if (item.path.startsWith("Gothic2/") &&
                             (target.length() != item.size || !hash(target).equals(item.hash))) {
                         throw new IOException("Existing game file differs: " + item.path +

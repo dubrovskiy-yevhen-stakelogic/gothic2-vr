@@ -1,4 +1,4 @@
-"""Run production fragments against the reported 033 gameplay regressions."""
+"""Run production fragments against the reported gameplay regressions."""
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parents[1]
@@ -76,7 +76,7 @@ void run(){GameMusic music;music.setupSettings();test(music.sound.volume==.7f,"n
  Gothic::index=1;music.setupSettings();test(music.sound.volumeAtPlay==0,"replacement provider starts muted before audio playback");
  music.setVideoMuted(false);test(music.sound.volume==.4f,"video end restores latest volume");
  music.setVideoMuted(true);Gothic::enabled=0;music.setupSettings();music.setVideoMuted(false);
- test(!music.isEnabled(),"video end preserves user-disabled music");
+ test(!music.isEnabled(),"video end preserves disabled music setting");
 }
 }
 namespace saveTest {
@@ -181,7 +181,7 @@ void run(){MoveAlgo movement;Vec3 out;
 }
 }
 int main(){weatherTest::run();musicTest::run();saveTest::run();particlesTest::run();runTest::run();returnTest::run();speedTest::run();
- std::printf("VR 033 regressions: %d production checks passed\n",checks);}
+ std::printf("VR regressions: %d production checks passed\n",checks);}
 '''
 out=Path(sys.argv[1]).resolve()
 out.mkdir(parents=True, exist_ok=True)

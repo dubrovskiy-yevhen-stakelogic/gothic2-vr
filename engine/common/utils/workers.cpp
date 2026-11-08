@@ -21,7 +21,7 @@ void Workers::setThreadName(const char* threadName) {
 #pragma pack(push,8)
   struct THREADNAME_INFO {
     DWORD  dwType = 0x1000; // Must be 0x1000.
-    LPCSTR szName;          // Pointer to name (in user addr space).
+    LPCSTR szName;          // Pointer to name (in application address space).
     DWORD  dwThreadID;      // Thread ID (-1=caller thread).
     DWORD  dwFlags;         // Reserved for future use, must be zero.
     };

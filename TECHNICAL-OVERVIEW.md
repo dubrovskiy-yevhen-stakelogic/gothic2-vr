@@ -211,7 +211,7 @@ A `QuestXr` singleton owning instance/system/session/spaces. Concretely:
   refresh-rate query. Visibility masks are queried (with retry) for peripheral
   culling.
 - `headView` / `eyeView` / `projection` convert tracking space into Gothic's
-  centimetre world space via `unitsPerMeter`, honouring the user's world-scale
+  centimetre world space via `unitsPerMeter`, honouring the configured world-scale
   setting and a recenterable reference pose.
 - `AndroidManifest.xml` declares the OpenXR immersive-HMD category, required
   head tracking, Vulkan 1.1, and `com.oculus.trade_cpu_for_gpu_amount=1`.
@@ -232,9 +232,7 @@ stereo frame:
 5. Record the HUD layer into its own command buffer and fence.
 6. `xr.endFrame()` submits the projection layer(s) plus the quad layer.
 
-Every phase is timestamped into `Vr::Profiler` (CPU ms per phase, GPU ms from
-command-buffer timestamps, GPU clock MHz), surfaced in-headset as a panel, a
-compact line, or CSV. Frames over 250 ms log a per-phase breakdown.
+`Vr::Profiler` retains CPU phase timing and optional diagnostic tracing. The regular Graphics menu exposes only an FPS counter; GPU timestamp sampling is disabled there. Detailed panels and comparison controls are reserved for diagnostic builds.
 
 ### 3.4 Stereo and mobile rendering work
 
@@ -295,8 +293,8 @@ optimisations that exploit the fact that **two eyes are nearly the same image**:
   converting multi-second first-sight stalls into an object appearing a few
   frames late.
 
-Every one of these is exposed as a toggle in the in-headset Performance /
-Render tests menu, and each has a `Gothic.ini [ENGINE]` kill switch
+Rendering comparison controls are excluded from the regular Graphics menu.
+Diagnostic builds retain the comparison pages. Engine overrides include
 (`vrStereoHiZOff`, `vrSkyRateOff`, `vrFogFoldOff`, `vrScaleRectOff`,
 `vrHudRectCopyOff`, `vrProfilerExtrasOff`).
 
@@ -384,7 +382,7 @@ This is unusually complete for a hobby VR port.
   from environment variables only. The scripts verify the APK signature and
   explicitly refuse to uninstall an app to work around a key mismatch.
 - **Installer** (`tools/install-release.ps1`) — downloads checksum-verified ADB,
-  packages the user's *own* purchased game into a private ZIP (saves excluded),
+  packages the locally installed purchased game into a private ZIP (saves excluded),
   checks headset free space, pushes, verifies, installs, and hands off to an
   in-headset `SetupActivity` for the file-picker import. `-DryRun` validates
   without touching the device. Reports land in `build/android/deployments/`.
@@ -407,7 +405,7 @@ This is unusually complete for a hobby VR port.
 - Physical crouching lowers the camera but does not resize the collision
   capsule.
 - Some original spells, quests and interactions are not yet wired to VR input.
-- VR menus are English-only; game language comes from the user's own data.
+- VR menus are English-only; game language comes from the installed game data.
 - No fixed frame rate is promised; foveation ships off.
 
 ---

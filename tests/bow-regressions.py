@@ -90,7 +90,7 @@ int main(){
   glow.returning.clear();glow.owner.items.clear();
   for(int i=0;i<100;++i)glow.owner.items.push_back({{0,0,float(200-i)},false,false,std::to_string(i)});
   glow.highlight();test(glow.highlights.size()==64 && glow.highlights.front().mesh=="99","dense item piles are bounded and nearest items take priority");
-  std::printf("VR 049 transfers and highlights: %d production checks passed\n",checks);
+  std::printf("VR transfers and highlights: %d production checks passed\n",checks);
 }
 '''
 out=Path(sys.argv[1]).resolve();out.mkdir(parents=True,exist_ok=True)

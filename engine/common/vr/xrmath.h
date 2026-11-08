@@ -38,8 +38,8 @@ inline Tempest::Matrix4x4 relative(const Pose& eye,const Pose& reference,float u
   auto ref=poseMatrix(reference,unitsPerMeter); ref.inverse();
   return ref*poseMatrix(eye,unitsPerMeter);
 }
-inline Tempest::Matrix4x4 eyeView(const Pose& eye,const Pose& reference,const Tempest::Matrix4x4& base) {
-  auto inv=relative(eye,reference); inv.inverse();
+inline Tempest::Matrix4x4 eyeView(const Pose& eye,const Pose& reference,const Tempest::Matrix4x4& base,float unitsPerMeter=100.f) {
+  auto inv=relative(eye,reference,unitsPerMeter); inv.inverse();
   auto c=Tempest::Matrix4x4::mkIdentity(); c.scale(1,-1,-1);
   return c*inv*c*base;
 }

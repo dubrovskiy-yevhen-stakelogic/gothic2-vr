@@ -1,3 +1,4 @@
+#define GOTHIC2VR_MENU_DIAGNOSTICS 1 // Retain coverage of developer-only comparison pages.
 #include "vr/vrcontrols.h"
 #include "vr/vrwelcome.h"
 #include "vr/vrprofiler.h"
@@ -18,13 +19,13 @@ int main() {
   Vr::Settings legacy; std::istringstream legacyIni("IndexedObjects=0\n"); legacy.read(legacyIni);
   test(legacy.batchedObjects && !legacy.indexedObjects,"old INI enables batching without changing indexed preference");
   Vr::Settings legacyIndexed; std::istringstream legacyIndexedIni("IndexedObjects=1\n"); legacyIndexed.read(legacyIndexedIni);
-  test(legacyIndexed.batchedObjects && legacyIndexed.indexedObjects,"014 INI migrates to batching without rewriting geometry preference");
+  test(legacyIndexed.batchedObjects && legacyIndexed.indexedObjects,"INI migrates to batching without rewriting geometry preference");
   test(legacy.frameOverlap,"old INI enables CPU/GPU overlap");
   test(legacy.tiledLights,"old INI enables tiled local lights");
   test(legacy.subgroupTiles && legacy.uniformLights && legacy.stereoSeed && legacy.framePipeline,"old INI enables subgroup and stereo preparation");
   test(legacy.shadows && legacy.lighting && legacy.localLights,"old INI keeps all render passes enabled");
-  test(legacy.directOutput,"018 settings default On in old INI");
-  test(legacy.slabLights,"019 light slabs default On in old INI");
+  test(legacy.directOutput,"settings default On in old INI");
+  test(legacy.slabLights,"light slabs default On in old INI");
   { Vr::Settings tilesOff; std::istringstream ini("TiledLights=0\nSlabLights=0\n"); tilesOff.read(ini); test(!tilesOff.slabLights && !tilesOff.tiledLights,"SlabLights=0 keeps the previous tile preference"); }
   std::istringstream corrupt("WorldScale=nan\nRenderScale=inf\nSmoothSpeed=999\nSnapAngle=-3\nTurnMode=9\nHudDistance=-50\nUnknown=123\n");
   settings.read(corrupt);
@@ -42,7 +43,7 @@ int main() {
   in.leftGrip=in.rightGrip=in.menu=true;
   test(step()&&menu.visible,"chord opens VR menu and consumes input");
   test(step()&&menu.visible,"held chord cannot retoggle"); release();
-  test(menu.rows().size()==11 && menu.row()==Vr::Menu::Locomotion,"main menu exposes submenus");
+  test(menu.rows().size()==12 && menu.row()==Vr::Menu::Locomotion,"main menu exposes submenus and cutscene mode");
   in.a=true; step(); test(menu.page==Vr::Menu::Page::Locomotion&&!menu.changed,"A enters locomotion without changing settings");
   step(); test(menu.settings.turn==Vr::TurnMode::Snap,"held A on entry cannot change turn mode"); release();
   in.a=true; step(); test(menu.settings.turn==Vr::TurnMode::Smooth && menu.changed,"A changes selected setting");
@@ -79,7 +80,7 @@ int main() {
   test(!menu.settings.directOutput && menu.changed,"Direct output toggles");
   step(); test(!menu.settings.directOutput && !menu.changed,"Held trigger does not retoggle direct output"); release();
   std::ostringstream modeIni; menu.settings.write(modeIni); Vr::Settings modeRestored; std::istringstream modeInput(modeIni.str()); modeRestored.read(modeInput);
-  test(!modeRestored.directOutput && modeRestored.shadows,"018 switches persist without resetting old preferences");
+  test(!modeRestored.directOutput && modeRestored.shadows,"switches persist without resetting old preferences");
   menu.selected=12; in.trigger=1; step();
   test(menu.row()==Vr::Menu::Horizon && menu.settings.horizon==2 && menu.changed && !menu.recenter,"Horizon steps from 450 m to 600 m without recentering");
   step(); test(menu.settings.horizon==2 && !menu.changed,"held trigger cannot repeat horizon step"); release();
@@ -104,9 +105,9 @@ int main() {
   std::ostringstream powerIni; menu.settings.write(powerIni); Vr::Settings powerRestored; std::istringstream powerInput(powerIni.str()); powerRestored.read(powerInput);
   test(powerRestored.cpuLevel==4 && powerRestored.gpuLevel==1 && powerRestored.horizon==1,"CPU and GPU levels persist with the horizon");
   std::istringstream invalidPower("CpuLevel=9\nGpuLevel=-2\n"); powerRestored.read(invalidPower); test(powerRestored.cpuLevel==4 && powerRestored.gpuLevel==0,"out-of-range levels clamp");
-  std::istringstream oldPower("PowerMode=2\n"); Vr::Settings migrated; migrated.read(oldPower); test(migrated.cpuLevel==4 && migrated.gpuLevel==4,"026 PowerMode=2 migrates to Boost/Boost");
-  std::istringstream oldSustained("PowerMode=1\n"); migrated.read(oldSustained); test(migrated.cpuLevel==3 && migrated.gpuLevel==3,"026 PowerMode=1 migrates to Sustained high");
-  test(Vr::Settings().cpuLevel==4 && Vr::Settings().gpuLevel==4 && !Vr::Settings().earlyLeftEye && Vr::Settings().horizon==1,"026 defaults: Boost power, early left eye off, 450 m horizon");
+  std::istringstream oldPower("PowerMode=2\n"); Vr::Settings migrated; migrated.read(oldPower); test(migrated.cpuLevel==4 && migrated.gpuLevel==4,"PowerMode=2 migrates to Boost/Boost");
+  std::istringstream oldSustained("PowerMode=1\n"); migrated.read(oldSustained); test(migrated.cpuLevel==3 && migrated.gpuLevel==3,"PowerMode=1 migrates to Sustained high");
+  test(Vr::Settings().cpuLevel==4 && Vr::Settings().gpuLevel==4 && !Vr::Settings().earlyLeftEye && Vr::Settings().horizon==1,"defaults: Boost power, early left eye off, 450 m horizon");
   in.trigger=1; step(); release(); in.trigger=1; step(); release(); in.trigger=1; step(); release(); test(menu.settings.gpuLevel==4,"GPU level restored to Boost");
   in.y=1; step(); release(); in.a=true; step(); release();
   test(menu.page==Vr::Menu::Page::Performance && menu.row()==Vr::Menu::Power && !menu.changed,"Back returns to the Power row");
@@ -120,17 +121,17 @@ int main() {
   test(lodRestored.terrainLod==2 && lodRestored.cpuLevel==4,"Terrain detail persists with the power levels");
   std::istringstream invalidLod("TerrainLod=9\n"); lodRestored.read(invalidLod); test(lodRestored.terrainLod==3,"out-of-range terrain detail clamps");
   std::istringstream oldLod("Horizon=1\n"); Vr::Settings oldLodRestored; oldLodRestored.read(oldLod); test(oldLodRestored.terrainLod==2,"old INI defaults terrain detail to Near");
-  menu.selected=15; in.trigger=1; step();
-  test(menu.row()==Vr::Menu::Foveation && menu.settings.foveation==1 && menu.changed,"Foveation steps from Off to Low");
-  step(); test(menu.settings.foveation==1 && !menu.changed,"held trigger cannot repeat foveation step"); release();
-  in.secondaryTrigger=1; step(); release(); test(menu.settings.foveation==0,"Foveation steps back to Off");
-  in.secondaryTrigger=1; step(); release(); test(menu.settings.foveation==3,"Foveation wraps to High");
-  in.trigger=1; step(); release(); test(menu.settings.foveation==0,"Foveation wraps back to Off");
+  menu.settings.vrs=0; menu.selected=15; in.trigger=1; step();
+  test(menu.row()==Vr::Menu::Vrs && menu.settings.vrs==1 && menu.changed,"Foveation steps from Off to Low");
+  step(); test(menu.settings.vrs==1 && !menu.changed,"held trigger cannot repeat foveation step"); release();
+  in.secondaryTrigger=1; step(); release(); test(menu.settings.vrs==0,"Foveation steps back to Off");
+  in.secondaryTrigger=1; step(); release(); test(menu.settings.vrs==4,"Foveation wraps to High");
+  in.trigger=1; step(); release(); test(menu.settings.vrs==0,"Foveation wraps back to Off");
   std::ostringstream fovIni; menu.settings.write(fovIni); Vr::Settings fovRestored; std::istringstream fovInput(fovIni.str()); fovRestored.read(fovInput);
   test(fovRestored.foveation==0 && fovRestored.terrainLod==2,"Foveation persists with terrain detail");
-  std::istringstream invalidFov("FoveationBands=7\n"); fovRestored.read(invalidFov); test(fovRestored.foveation==3,"out-of-range foveation clamps");
-  std::istringstream oldFov("Foveation=2\n"); Vr::Settings oldFovRestored; oldFovRestored.read(oldFov); test(oldFovRestored.foveation==0,"the 0.0.28 Foveation key is ignored: off");
-  std::istringstream bandFov("FoveationBands=2\n"); oldFovRestored.read(bandFov); test(oldFovRestored.foveation==2,"FoveationBands restores");
+  std::istringstream invalidFov("FoveationBands=7\n"); fovRestored.read(invalidFov); test(fovRestored.foveation==0,"out-of-range foveation clamps");
+  std::istringstream oldFov("Foveation=2\n"); Vr::Settings oldFovRestored; oldFovRestored.read(oldFov); test(oldFovRestored.foveation==0,"the legacy Foveation key is ignored: off");
+  std::istringstream bandFov("FoveationBands=2\n"); oldFovRestored.read(bandFov); test(oldFovRestored.foveation==0,"FoveationBands restores");
   menu.selected=16; in.trigger=1; step();
   test(menu.row()==Vr::Menu::StaticLighting && !menu.settings.staticLighting && menu.changed,"Lighting toggles from 2002 static to Dynamic");
   step(); test(!menu.settings.staticLighting && !menu.changed,"held trigger cannot repeat the lighting toggle"); release();
@@ -139,7 +140,7 @@ int main() {
   test(slRestored.staticLighting && slRestored.foveation==0,"Lighting mode persists with foveation");
   std::istringstream oldSl("FoveationBands=0\n"); Vr::Settings oldSlRestored; oldSlRestored.read(oldSl); test(oldSlRestored.staticLighting,"old INI defaults to 2002 static lighting");
   std::istringstream offSl("StaticLighting=0\n"); oldSlRestored.read(offSl); test(!oldSlRestored.staticLighting,"StaticLighting=0 restores Dynamic");
-  menu.selected=17; in.a=true; step(); release();
+  menu.selected=18; in.a=true; step(); release();
   test(menu.page==Vr::Menu::Page::Main && menu.selected==2,"performance Back row is the last row and returns to the Performance entry");
   in.a=true; step(); release(); test(menu.page==Vr::Menu::Page::Performance,"performance submenu reopened");
   menu.selected=8; in.a=true; step();
@@ -214,7 +215,7 @@ int main() {
     auto prelease=[&] { pin={}; pin.focused=true; pstep(); };
     pstep(); pin.leftGrip=pin.rightGrip=pin.menu=true; pstep(); prelease();
     pm.selected=2; pin.a=true; pstep(); prelease();
-    test(pm.page==Vr::Menu::Page::Performance && pm.rows().size()==18,"performance page keeps its 18 rows");
+    test(pm.page==Vr::Menu::Page::Performance && pm.rows().size()==19,"performance page keeps its 18 rows");
     pm.selected=2; test(pm.row()==Vr::Menu::Profiler,"profiler row keeps index 2");
     test(pm.settings.profiler && pm.settings.profilerView==0,"default profiler display is the panel");
     pin.trigger=1; pstep(); test(pm.settings.profiler && pm.settings.profilerView==1 && pm.changed,"panel -> compact"); prelease();

@@ -1117,7 +1117,12 @@ void PlayerControl::implMove(uint64_t dt) {
   int rotation = 0;
   if(controllerDirectional && controllerTarget==nullptr && gamepadLY!=0.f && allowRot && !pl.isAttackAnim()) {
     const float delta=std::remainder(controllerYaw-rot,360.f);
+#if defined(GOTHIC2VR_OPENXR)
+    // Stick translation must follow the requested heading on this very frame.
+    rot+=delta;
+#else
     rot+=MovementResponse::turn(delta,std::abs(gamepadLY),controllerTurnSpeed,controllerTurnBoost,float(dt)/1000.f);
+#endif
     }
   if(allowRot) {
     if(touchTurn!=0.f) {

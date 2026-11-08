@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include <Tempest/Log>
 #include "vr/questxr.h"
+#include "vr/vrgroundmotion.h"
 #include "utils/feedback.h"
 #include "gothic.h"
 #include "utils/cameramath.h"
@@ -364,7 +365,7 @@ void MainWindow::tickGamepad() {
       if(npc && !waterInput) npc->setVrSwimInput({},0);
     }
   } inputGuard{Gothic::inst().player(),vrRunButton,vrRunning,runDown,vrMenu.settings.runHold};
-  if(auto pl=Gothic::inst().player())pl->setVrLocomotionSpeed(1.f);
+  if(auto pl=Gothic::inst().player()) { pl->setVrLocomotionSpeed(1.f); pl->setVrGroundInput(false,{}); }
   // A device the runtime has just bound: Touch, Index and WMR keep the shipped
   // button map, a wand or the simple-controller floor falls back to the three
   // rows it can actually reach. An edited map is never overwritten, and the
@@ -656,6 +657,8 @@ void MainWindow::tickGamepad() {
       return;
     }
   }
+  if(auto pl=Gothic::inst().player(); pl && inputGuard.accepted && !pl->isDown())
+    pl->setVrGroundInput(true,Vr::groundStickVelocity(move.x,move.y,yaw,vrRunning?vrMenu.settings.runSpeed:.72f));
   player.setControllerMovement(move.x,move.y,yaw,false,options.movementTurnSpeed);
   return;
 #endif

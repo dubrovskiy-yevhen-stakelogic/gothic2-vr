@@ -132,7 +132,7 @@ int main(){
  }
  test(pickupVisibility(101,100,0)==0 && pickupVisibility(100.75f,100,0)>.49f,"depth transition is narrow and continuous");
  test(pickupVisibility(110,100,100)==0,"steep depth slope cannot expand visibility through a wall");
- std::printf("VR 051 attachment and depth: %d production checks passed\n",checks);
+ std::printf("VR attachment and depth: %d production checks passed\n",checks);
 }
 '''
 out=Path(sys.argv[1]).resolve();out.mkdir(parents=True,exist_ok=True);(out/'regressions.cpp').write_text(fixture)

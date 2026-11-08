@@ -19,3 +19,5 @@ __pycache__/
 /local.properties
 /.idea/
 /.vscode/
+/work/
+/releases/

@@ -74,9 +74,24 @@ void check(bool ok,const char* label){++checks;if(!ok){std::printf("FAIL %s\n",l
 fixture += method('engine/common/mainwindow.cpp', 'void MainWindow::tickCamera(uint64_t dt)')
 fixture += '\n' + method('engine/common/game/playercontrol.cpp', 'void PlayerControl::setControllerMovement(')
 fixture += '\n' + method('engine/common/game/playercontrol.cpp', 'void PlayerControl::setControllerSwim(')
+movement = (root / 'engine/common/game/playercontrol.cpp').read_text(encoding='utf-8')
+begin = movement.index('    const float delta=std::remainder(controllerYaw-rot,360.f);')
+end = movement.index('    }\n  if(allowRot)', begin)
+fixture += '\nfloat productionHeading(float rot,float controllerYaw) {\n'
+fixture += 'float gamepadLY=-1,controllerTurnSpeed=180,controllerTurnBoost=0; uint64_t dt=14;\n'
+fixture += movement[begin:end] + '\nreturn rot;\n}\n'
 fixture += r'''
 int main(){
   auto& g=Gothic::inst(); MainWindow w;
+  for(float start : {0.f,90.f,-179.f,359.f}) {
+    const float destination=start+180;
+    const float next=productionHeading(start,destination);
+#if defined(GOTHIC2VR_OPENXR)
+    check(std::abs(std::remainder(next-destination,360.f))<.001f,"180 degree reversal follows stick in the first frame");
+#else
+    check(std::abs(next-start)<3.f,"flat and touch keep native gradual turning");
+#endif
+  }
   for(float heading : {0.f,45.f,-90.f,179.f}) for(float zeroX : {0.f,-0.f}) for(float zeroY : {0.f,-0.f}) {
     // Physical swimming passes neutral axes; hand strokes own translation.
     w.player.setControllerSwim(zeroX,zeroY,heading,0,180);
@@ -100,8 +115,7 @@ int main(){
     g.cam.angle={};g.npc.yaw=0;
     for(int frame=0;frame<600;++frame){
       w.player.setControllerMovement(stickX,-1,g.cam.spin().y+head,false,180,0);
-      const float delta=std::remainder(w.player.controllerYaw-g.npc.yaw,360.f);
-      g.npc.yaw+=MovementResponse::turn(delta,std::abs(w.player.gamepadLY),180,0,1.f/72);
+      g.npc.yaw=productionHeading(g.npc.yaw,w.player.controllerYaw);
       w.tickCamera(14);
     }
     std::printf("head=%.0f stickX=%.0f cameraYaw=%.2f bodyYaw=%.2f\n",head,stickX,g.cam.angle.y,g.npc.yaw);

@@ -116,7 +116,7 @@ struct ShadowSlicer {
   // Why a new cycle should start now (R_None: keep the map).
   Reason wants(const Inputs& in) const {
     if(!started)                                  return R_First;
-    if(in.generation!=buildGeneration)            return R_Commands; // cluster ranges and indirect buffers were rebuilt (0.0.37)
+    if(in.generation!=buildGeneration)            return R_Commands; // cluster ranges and indirect buffers were rebuilt
     if(!onDemand)                                 return R_Cycle;
     if((in.center-buildCenter).length()>moveCm)   return R_Moved;
     if(angleDeg(in.sun,buildSun)>sunDeg)          return R_Sun;
@@ -153,7 +153,7 @@ struct ShadowSlicer {
     return s;
     }
 
-  // 0.0.34 schedule without triggers: a new cycle whenever the last one ended.
+  // Continuous schedule without triggers: a new cycle whenever the last one ended.
   Step step(const Tempest::Matrix4x4& current) {
     const uint32_t n = std::max<uint32_t>(slices,1);
     if(!active || next>=n) {
@@ -173,7 +173,7 @@ struct ShadowSlicer {
 
   // Balancing weight of one cluster: every cluster in a range costs one
   // visibility-pass thread; a caster inside the map adds its meshlets' draw,
-  // ~500x a cull thread on the Quest (047: a 120k-cluster cull 0.08 ms, a
+  // ~500x a cull thread on the Quest (a 120k-cluster cull 0.08 ms, a
   // 12-slice map ~1.7 ms over a few thousand caster meshlets).
   static uint32_t clusterWeight(bool caster, uint32_t meshlets) {
     return 1u + (caster ? 512u*std::min<uint32_t>(meshlets, 1u<<20) : 0u);
@@ -193,7 +193,7 @@ struct ShadowSlicer {
   // cluster; each inner bound sits at the prefix sum nearest to i/slices of the
   // total weight, so a slice differs from the mean by at most the largest
   // single weight. The raw index split left the objects in 1-2 of 12 slices
-  // behind ~100k skipped landscape clusters (047: p50 0.016 ms, p90 0.54).
+  // behind ~100k skipped landscape clusters (p50 0.016 ms, p90 0.54).
   static void balancedBounds(const uint32_t* weight, uint32_t count, uint32_t slices, uint32_t* bounds) {
     const uint32_t n = std::max<uint32_t>(slices,1);
     uint64_t total = 0;

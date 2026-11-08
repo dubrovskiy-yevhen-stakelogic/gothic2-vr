@@ -70,7 +70,7 @@ struct DynamicWorld::HumShape:btCapsuleShape {
   HumShape(btScalar radius, btScalar height):btCapsuleShape(CollisionWorld::toMeters(radius),
                                                             CollisionWorld::toMeters(height)) {}
 
-  // "human" object mush have identyty scale/rotation matrix. Only translation allowed.
+  // Character collision objects require identity scale/rotation; only translation is allowed.
   void getAabb(const btTransform& t, btVector3& aabbMin, btVector3& aabbMax) const override {
     const btScalar rad = getRadius();
     btVector3      extent(rad,rad,rad);

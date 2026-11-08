@@ -60,6 +60,7 @@ class MoveAlgo final {
 
     void    multSpeed(float s){ mulSpeed=s; }
     void    setVrLocomotionSpeed(float s){ vrLocomotionSpeed=s; }
+    void    setVrGroundInput(bool enabled,const Tempest::Vec3& velocity) { vrGroundInput=enabled; vrStickVelocity=velocity; }
     void    clearSpeed();
     void    setVrSwimInput(const Vr::SwimInput& in,float dt);
     bool    vrSwimming() const { return vrSwim.input.enabled && (isSwim() || isDive()); }
@@ -148,6 +149,9 @@ class MoveAlgo final {
       };
 
     Vr::Swimming        vrSwim;
+    Tempest::Vec3       vrGroundVelocity;
+    bool               vrJumpActive=false;
+    bool               vrJumpLatched=false;
     uint64_t            vrSwimReportTime=0;
     uint64_t            vrWaterTraceTime=0;
     uint32_t            vrWaterTraceLines=0;
@@ -161,6 +165,8 @@ class MoveAlgo final {
     State               flags = Run;
 
     float               mulSpeed  =1.f;
+    bool vrGroundInput=false;
+    Tempest::Vec3 vrStickVelocity; // cm/s, controller-owned, never serialized
     float               vrLocomotionSpeed=1.f; // Transient input factor; never overrides script speed or enters saves.
     Tempest::Vec3       fallSpeed ={};
     float               fallCount=0.f;
